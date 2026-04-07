@@ -6,170 +6,201 @@ import easyocr
 import io
 from datetime import datetime
 
-# ==================== CONEXIÓN A CLEVER CLOUD ====================
+# ==================== CONFIGURACIÓN CORPORATIVA ====================
+st.set_page_config(page_title="Carrier Transicold - Escaneo de Series", page_icon="📷", layout="wide")
+
+# Colores Corporativos Carrier
+CARRIER_BLUE = "#002B5B"      # Azul oscuro principal
+CARRIER_LIGHT_BLUE = "#00A9E0" # Azul claro
+CARRIER_GRAY = "#F4F4F4"
+
+# Logo
+LOGO_URL = "https://raw.githubusercontent.com/TU-USUARIO/app-escaneo-series/main/carrierlogo.jpeg"  
+# ← Cambia TU-USUARIO por tu usuario real de GitHub
+
+# CSS Profesional Carrier
+st.markdown(f"""
+    <style>
+        .main-header {{ 
+            font-size: 2.4rem; 
+            font-weight: bold; 
+            color: {CARRIER_BLUE}; 
+            text-align: center;
+            margin-bottom: 10px;
+        }}
+        .subheader {{
+            color: {CARRIER_BLUE};
+            font-weight: 600;
+        }}
+        .stButton>button {{
+            background-color: {CARRIER_BLUE};
+            color: white;
+            border-radius: 8px;
+            height: 3em;
+            font-weight: bold;
+        }}
+        .stButton>button:hover {{
+            background-color: #003D80;
+        }}
+        .success-msg {{
+            background-color: #D4EDDA;
+            color: #155724;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 5px solid #28A745;
+        }}
+        [data-testid="stAppViewContainer"] {{
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }}
+        .sidebar .css-1d391kg {{ background-color: {CARRIER_BLUE}; color: white; }}
+    </style>
+""", unsafe_allow_html=True)
+
+# ==================== HEADER CON LOGO ====================
+col_logo, col_title = st.columns([1, 4])
+with col_logo:
+    st.image(LOGO_URL, width=220)
+with col_title:
+    st.markdown('<h1 class="main-header">ESCANEO DE SERIES</h1>', unsafe_allow_html=True)
+    st.markdown("**Carrier Transicold** - Sistema de Registro de Componentes")
+
+st.markdown(f"**Técnico:** {st.session_state.get('username', 'Usuario')} | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+# ==================== CONEXIÓN ====================
 def get_db_connection():
     return mysql.connector.connect(
-        host=st.secrets["db"]["host"],
-        port=st.secrets["db"]["port"],
-        user=st.secrets["db"]["user"],
-        password=st.secrets["db"]["password"],
+        host=st.secrets["db"]["host"], port=st.secrets["db"]["port"],
+        user=st.secrets["db"]["user"], password=st.secrets["db"]["password"],
         database=st.secrets["db"]["database"]
     )
 
-# ==================== INICIO DE SESIÓN ====================
+# ==================== LOGIN ====================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-st.set_page_config(page_title="Escaneo Series", page_icon="📷", layout="wide")
-
 if not st.session_state.logged_in:
     st.title("🔐 Iniciar Sesión")
-    username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
-    
-    if st.button("Ingresar", type="primary"):
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
-            user = cursor.fetchone()
-            conn.close()
-            if user:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.success(f"✅ Bienvenido, {username}!")
-                st.rerun()
-            else:
-                st.error("❌ Usuario o contraseña incorrectos")
-        except Exception as e:
-            st.error(f"Error de conexión: {str(e)}")
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        username = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        if st.button("Ingresar", type="primary", use_container_width=True):
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
+                user = cursor.fetchone()
+                conn.close()
+                if user:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.success("✅ Bienvenido al sistema")
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos")
+            except Exception as e:
+                st.error("Error de conexión a la base de datos")
     st.stop()
 
-# ==================== APLICACIÓN PRINCIPAL ====================
-st.title("📷 Escaneo de Series - Clever Cloud")
-st.markdown(f"**Técnico:** {st.session_state.username} | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-
+# ==================== CARGAR DATOS ====================
 try:
     conn = get_db_connection()
     df = pd.read_sql("SELECT * FROM `unidades` ORDER BY `N`", conn)
 except:
-    df = pd.DataFrame(columns=['N', 'UNIT #', 'VIN NUMBER', 'REEFER SERIAL NDUG7CN0-AH-A', 
+    df = pd.DataFrame(columns=['N', 'UNIT #', 'VIN NUMBER', 'REEFER SERIAL NDUG7CN0-AH-A',
                                'REEFER MODEL ST', 'ENGINE SERIAL', 'COMPRESSOR SERIAL', 'CARB'])
 
-# ==================== AGREGAR NUEVA UNIDAD ====================
-with st.expander("➕ Agregar Nueva Unidad Manualmente", expanded=False):
-    st.subheader("Nueva Unidad")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        new_unit = st.text_input("UNIT #", value="563580")
-        new_vin = st.text_input("VIN NUMBER", value="3H3V532KXXJ0420XX")
-    with col_b:
-        new_reefer = st.text_input("REEFER SERIAL NDUG7CN0-AH-A", value="")
-        new_model = st.text_input("REEFER MODEL ST", value="X4 7700")
-    
-    if st.button("💾 Guardar Nueva Unidad"):
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO `unidades` 
-                (`N`, `UNIT #`, `VIN NUMBER`, `REEFER SERIAL NDUG7CN0-AH-A`, `REEFER MODEL ST`)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (int(new_unit)+100, new_unit, new_vin, new_reefer, new_model))
-            conn.commit()
-            st.success(f"✅ Nueva unidad {new_unit} agregada correctamente!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error: {e}")
+# ==================== SIDEBAR ====================
+with st.sidebar:
+    st.image(LOGO_URL, width=180)
+    st.markdown("### Herramientas")
+    st.markdown("---")
+    if st.button("⬇️ Descargar Excel Completo", use_container_width=True):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="Unidades")
+        output.seek(0)
+        st.download_button("📥 Descargar Archivo", data=output, 
+                           file_name=f"unidades_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ==================== TABLA ACTUAL ====================
-st.subheader("📊 Tabla actual")
-if df.empty:
-    st.warning("⚠️ Aún no hay unidades registradas. Agrega una arriba o empieza a escanear.")
-else:
-    st.dataframe(df, use_container_width=True)
-
-# ==================== SELECCIÓN DE UNIDAD Y CAMPO ====================
-col1, col2 = st.columns(2)
+# ==================== SELECCIÓN DE UNIDAD ====================
+st.subheader("Selecciona o crea unidad")
+col1, col2 = st.columns([3,1])
 
 with col1:
     if not df.empty:
-        unidad = st.selectbox(
-            "Selecciona la Unidad",
-            options=df["UNIT #"].astype(str).tolist(),
-            format_func=lambda x: f"Unidad {x}"
-        )
+        opciones = df["UNIT #"].astype(str).tolist()
+        opciones.append("+ Nueva Unidad")
+        selected_unit = st.selectbox("Unidad", opciones, label_visibility="collapsed")
     else:
-        unidad = st.text_input("Ingresa UNIT # para escanear", value="563580")
+        selected_unit = st.text_input("UNIT #", value="563580", label_visibility="collapsed")
 
-with col2:
-    campos = {
-        "VIN NUMBER": "`VIN NUMBER`",
-        "REEFER SERIAL NDUG7CN0-AH-A": "`REEFER SERIAL NDUG7CN0-AH-A`",
-        "ENGINE SERIAL": "`ENGINE SERIAL`",
-        "COMPRESSOR SERIAL": "`COMPRESSOR SERIAL`",
-        "CARB": "`CARB`"
-    }
-    operacion = st.selectbox("Campo a actualizar", options=list(campos.keys()))
+is_new = selected_unit == "+ Nueva Unidad" or df.empty
 
-# ==================== ESCANEO CON CÁMARA + IA ====================
-st.subheader("📸 Escanea la serie")
-st.caption("Apunta la cámara al número de serie impreso")
+# Campo a actualizar
+campos = {
+    "VIN NUMBER": "`VIN NUMBER`",
+    "REEFER SERIAL NDUG7CN0-AH-A": "`REEFER SERIAL NDUG7CN0-AH-A`",
+    "ENGINE SERIAL": "`ENGINE SERIAL`",
+    "COMPRESSOR SERIAL": "`COMPRESSOR SERIAL`",
+    "CARB": "`CARB`"
+}
+campo_seleccionado = st.selectbox("Campo a actualizar", options=list(campos.keys()))
 
-imagen = st.camera_input("Capturar foto", key="camera")
+# ==================== CAPTURA DE IMAGEN ====================
+st.subheader("📸 Captura del número de serie")
+
+imagen = st.camera_input("📷 Toma la foto directamente con la cámara", key="camara")
+
+if imagen is None:
+    uploaded = st.file_uploader("📤 O sube una foto desde la galería", type=["jpg", "jpeg", "png"])
+    if uploaded:
+        imagen = uploaded
 
 if imagen is not None:
-    st.image(imagen, caption="Foto capturada", use_column_width=True)
+    st.image(imagen, caption="Imagen capturada", use_column_width=True)
     
-    with st.spinner("🔍 Leyendo con Inteligencia Artificial..."):
+    with st.spinner("🔍 Procesando con Inteligencia Artificial..."):
         img_bytes = imagen.getvalue()
         pil_image = Image.open(io.BytesIO(img_bytes))
-        
         if "reader" not in st.session_state:
             st.session_state.reader = easyocr.Reader(['en', 'es'], gpu=False)
-        
         resultados = st.session_state.reader.readtext(pil_image, detail=0)
         texto_extraido = " ".join(resultados).strip().upper()
     
     st.success(f"**Serie detectada:** {texto_extraido}")
-    serie_confirmada = st.text_input("Confirma o corrige el número", value=texto_extraido)
-    
-    if st.button("💾 Guardar en Clever Cloud", type="primary"):
+    valor_final = st.text_input("Confirma o corrige el número de serie", value=texto_extraido)
+
+    if st.button("💾 GUARDAR EN BASE DE DATOS", type="primary", use_container_width=True):
         try:
             cursor = conn.cursor()
-            columna = campos[operacion]
-            
-            # Si la unidad no existe, crearla automáticamente
-            if df.empty or str(unidad) not in df["UNIT #"].astype(str).values:
-                cursor.execute(f"""
-                    INSERT INTO `unidades` (`N`, `UNIT #`, {columna.replace('`','')})
-                    VALUES (%s, %s, %s)
-                """, (int(unidad) + 100, unidad, serie_confirmada))
-                st.info(f"✅ Unidad {unidad} creada automáticamente")
+            columna = campos[campo_seleccionado]
+
+            if is_new:
+                nuevo_n = len(df) + 100
+                cursor.execute(f"INSERT INTO `unidades` (`N`, `UNIT #`, {columna.replace('`','')}) VALUES (%s, %s, %s)",
+                             (nuevo_n, selected_unit, valor_final))
+                st.success(f"✅ Nueva unidad {selected_unit} creada correctamente")
             else:
                 query = f"UPDATE `unidades` SET {columna} = %s WHERE `UNIT #` = %s"
-                cursor.execute(query, (serie_confirmada, unidad))
-            
+                cursor.execute(query, (valor_final, selected_unit))
+                st.success(f"✅ Guardado correctamente en {campo_seleccionado}")
+
             conn.commit()
-            st.success(f"✅ ¡Guardado correctamente en {operacion}!")
             st.rerun()
         except Exception as e:
             st.error(f"Error al guardar: {e}")
         finally:
             cursor.close()
 
-# ==================== EXPORTAR A EXCEL ====================
+# ==================== TABLA ====================
 st.divider()
-if st.button("⬇️ Descargar Excel completo", type="secondary"):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name="Unidades")
-    output.seek(0)
-    st.download_button(
-        label="📥 Descargar archivo .xlsx",
-        data=output,
-        file_name=f"unidades_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+st.subheader("📊 Tabla actual de unidades")
+if df.empty:
+    st.info("No hay unidades registradas todavía. La primera se creará al guardar.")
+else:
+    st.dataframe(df, use_container_width=True, height=500)
 
 conn.close()
-st.caption("App de Escaneo de Series • Funciona en celular")
+st.caption("Carrier Transicold • Sistema de Escaneo de Series • México")

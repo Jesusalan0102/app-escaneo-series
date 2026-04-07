@@ -11,20 +11,30 @@ st.set_page_config(page_title="Carrier Transicold - Escaneo de Series", page_ico
 
 CARRIER_BLUE = "#002B5B"
 
-# === TU LOGO CORRECTO ===
-LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpeg"
+# === TU NUEVO LOGO (CORREGIDO) ===
+LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
 st.markdown(f"""
     <style>
-        .main-header {{ font-size: 2.4rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; }}
-        .stButton>button {{ background-color: {CARRIER_BLUE}; color: white; border-radius: 8px; font-weight: bold; }}
+        .main-header {{ 
+            font-size: 2.4rem; 
+            font-weight: bold; 
+            color: {CARRIER_BLUE}; 
+            text-align: center; 
+        }}
+        .stButton>button {{ 
+            background-color: {CARRIER_BLUE}; 
+            color: white; 
+            border-radius: 8px; 
+            font-weight: bold; 
+        }}
     </style>
 """, unsafe_allow_html=True)
 
 # Header con logo
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
-    st.image(LOGO_URL, width=220)
+    st.image(LOGO_URL, width=260)
 with col_title:
     st.markdown('<h1 class="main-header">ESCANEO DE SERIES</h1>', unsafe_allow_html=True)
 
@@ -70,7 +80,7 @@ except:
     df = pd.DataFrame(columns=['N', 'UNIT #', 'VIN NUMBER', 'REEFER SERIAL NDUG7CN0-AH-A',
                                'REEFER MODEL ST', 'ENGINE SERIAL', 'COMPRESSOR SERIAL', 'CARB'])
 
-# ==================== SELECCIÓN DE UNIDAD ====================
+# ==================== SELECCIÓN ====================
 st.subheader("Selecciona o crea unidad")
 col1, col2 = st.columns([3,1])
 with col1:

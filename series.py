@@ -15,7 +15,7 @@ CARRIER_LIGHT_BLUE = "#00A9E0" # Azul claro
 CARRIER_GRAY = "#F4F4F4"
 
 # Logo
-LOGO_URL = "https://raw.githubusercontent.com/TU-USUARIO/app-escaneo-series/main/carrierlogo.jpeg"  
+LOGO_URL = LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpeg"  
 # ← Cambia TU-USUARIO por tu usuario real de GitHub
 
 # CSS Profesional Carrier

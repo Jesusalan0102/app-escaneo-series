@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-from PIL import Image
+from PIL import Image, ImageEnhance
 import easyocr
 import io
 from datetime import datetime
@@ -11,27 +11,16 @@ st.set_page_config(page_title="Carrier Transicold - Escaneo de Series", page_ico
 
 CARRIER_BLUE = "#002B5B"
 
-# === TU NUEVO LOGO (CORREGIDO) ===
+# === TU LOGO (ya corregido) ===
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
 st.markdown(f"""
     <style>
-        .main-header {{ 
-            font-size: 2.4rem; 
-            font-weight: bold; 
-            color: {CARRIER_BLUE}; 
-            text-align: center; 
-        }}
-        .stButton>button {{ 
-            background-color: {CARRIER_BLUE}; 
-            color: white; 
-            border-radius: 8px; 
-            font-weight: bold; 
-        }}
+        .main-header {{ font-size: 2.4rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; }}
+        .stButton>button {{ background-color: {CARRIER_BLUE}; color: white; border-radius: 8px; font-weight: bold; height: 3.2em; }}
     </style>
 """, unsafe_allow_html=True)
 
-# Header con logo
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     st.image(LOGO_URL, width=260)
@@ -102,7 +91,7 @@ campos = {
 }
 campo_seleccionado = st.selectbox("Campo a actualizar", options=list(campos.keys()))
 
-# ==================== CAPTURA ====================
+# ==================== CAPTURA + MEJOR OCR ====================
 st.subheader("📸 Captura del número de serie")
 imagen = st.camera_input("Toma foto directamente", key="camara")
 
@@ -114,12 +103,18 @@ if imagen is None:
 if imagen is not None:
     st.image(imagen, caption="Imagen capturada", use_column_width=True)
     
-    with st.spinner("🔍 Leyendo con IA..."):
-        img_bytes = imagen.getvalue()
-        pil_image = Image.open(io.BytesIO(img_bytes))
+    with st.spinner("🔍 Procesando imagen y leyendo con IA..."):
+        # === MEJORAMIENTO DE IMAGEN PARA QUE LEA MEJOR ===
+        pil_image = Image.open(io.BytesIO(imagen.getvalue()))
+        gray = pil_image.convert('L')
+        enhancer = ImageEnhance.Contrast(gray)
+        enhanced = enhancer.enhance(2.5)          # Más contraste
+        sharpened = ImageEnhance.Sharpness(enhanced).enhance(2.0)
+        
         if "reader" not in st.session_state:
             st.session_state.reader = easyocr.Reader(['en', 'es'], gpu=False)
-        resultados = st.session_state.reader.readtext(pil_image, detail=0)
+        
+        resultados = st.session_state.reader.readtext(sharpened, detail=0)
         texto_extraido = " ".join(resultados).strip().upper()
     
     st.success(f"**Serie detectada:** {texto_extraido}")
@@ -131,14 +126,14 @@ if imagen is not None:
             columna_db = campos[campo_seleccionado]
 
             if is_new:
-                nuevo_n = len(df) + 100
-                query = f"INSERT INTO `unidades` (`N`, `UNIT #`, {columna_db}) VALUES (%s, %s, %s)"
-                cursor.execute(query, (nuevo_n, selected_unit, valor_final))
-                st.success(f"✅ Nueva unidad {selected_unit} creada")
+                # INSERT SIN LA COLUMNA 'N' (evita el error)
+                query = f"INSERT INTO `unidades` (`UNIT #`, {columna_db}) VALUES (%s, %s)"
+                cursor.execute(query, (selected_unit, valor_final))
+                st.success(f"✅ Nueva unidad {selected_unit} creada y guardada")
             else:
                 query = f"UPDATE `unidades` SET {columna_db} = %s WHERE `UNIT #` = %s"
                 cursor.execute(query, (valor_final, selected_unit))
-                st.success(f"✅ Guardado correctamente")
+                st.success(f"✅ Guardado correctamente en {campo_seleccionado}")
 
             conn.commit()
             st.rerun()

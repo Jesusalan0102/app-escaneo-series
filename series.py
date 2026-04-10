@@ -4,14 +4,13 @@ import mysql.connector
 from PIL import Image, ImageEnhance
 import easyocr
 import io
+import re
 from datetime import datetime
 
 # ==================== CONFIGURACIÓN CORPORATIVA ====================
 st.set_page_config(page_title="Carrier Transicold - Escaneo de Series", page_icon="📷", layout="wide")
 
 CARRIER_BLUE = "#002B5B"
-
-# === TU LOGO (ya corregido) ===
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
 st.markdown(f"""
@@ -91,7 +90,7 @@ campos = {
 }
 campo_seleccionado = st.selectbox("Campo a actualizar", options=list(campos.keys()))
 
-# ==================== CAPTURA + MEJOR OCR ====================
+# ==================== CAPTURA + OCR INTELIGENTE ====================
 st.subheader("📸 Captura del número de serie")
 imagen = st.camera_input("Toma foto directamente", key="camara")
 
@@ -103,19 +102,38 @@ if imagen is None:
 if imagen is not None:
     st.image(imagen, caption="Imagen capturada", use_column_width=True)
     
-    with st.spinner("🔍 Procesando imagen y leyendo con IA..."):
-        # === MEJORAMIENTO DE IMAGEN PARA QUE LEA MEJOR ===
+    with st.spinner("🔍 Procesando imagen y extrayendo SOLO el número de serie..."):
+        # Mejoramiento fuerte de imagen
         pil_image = Image.open(io.BytesIO(imagen.getvalue()))
         gray = pil_image.convert('L')
         enhancer = ImageEnhance.Contrast(gray)
-        enhanced = enhancer.enhance(2.5)          # Más contraste
-        sharpened = ImageEnhance.Sharpness(enhanced).enhance(2.0)
+        enhanced = enhancer.enhance(3.0)
+        sharpened = ImageEnhance.Sharpness(enhanced).enhance(2.5)
         
         if "reader" not in st.session_state:
             st.session_state.reader = easyocr.Reader(['en', 'es'], gpu=False)
         
         resultados = st.session_state.reader.readtext(sharpened, detail=0)
-        texto_extraido = " ".join(resultados).strip().upper()
+        texto_completo = " ".join(resultados).strip().upper()
+        
+        # === PATRÓN ESPECÍFICO PARA NÚMERO DE SERIE ===
+        # Busca patrones comunes en tus placas Hyundai Translead
+        patrones = [
+            r'VJ\d{6,8}',           # Ej: VJ024012, VJ448405
+            r'\b[A-Z0-9]{7,12}\b',  # Códigos alfanuméricos de 7-12 caracteres
+        ]
+        
+        serial_encontrado = None
+        for patron in patrones:
+            matches = re.findall(patron, texto_completo)
+            if matches:
+                serial_encontrado = matches[0]  # Tomamos el primero que coincida
+                break
+        
+        if serial_encontrado:
+            texto_extraido = serial_encontrado
+        else:
+            texto_extraido = texto_completo[:50]  # fallback si no encuentra patrón
     
     st.success(f"**Serie detectada:** {texto_extraido}")
     valor_final = st.text_input("Confirma o corrige el número de serie", value=texto_extraido)
@@ -126,10 +144,9 @@ if imagen is not None:
             columna_db = campos[campo_seleccionado]
 
             if is_new:
-                # INSERT SIN LA COLUMNA 'N' (evita el error)
                 query = f"INSERT INTO `unidades` (`UNIT #`, {columna_db}) VALUES (%s, %s)"
                 cursor.execute(query, (selected_unit, valor_final))
-                st.success(f"✅ Nueva unidad {selected_unit} creada y guardada")
+                st.success(f"✅ Nueva unidad {selected_unit} creada")
             else:
                 query = f"UPDATE `unidades` SET {columna_db} = %s WHERE `UNIT #` = %s"
                 cursor.execute(query, (valor_final, selected_unit))

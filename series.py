@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import easyocr
 import re
+from datetime import datetime
 
 # ==================== CONFIG ====================
 st.set_page_config(page_title="Carrier Transicold - Gestión", page_icon="📋", layout="wide")
@@ -25,8 +26,7 @@ with col_logo:
 with col_title:
     st.markdown('<h1 class="main-header">CARRIER TRANSICOLD</h1>', unsafe_allow_html=True)
 
-# ==================== OCR ====================
-
+# ==================== OCR (OPTIMIZADO) ====================
 @st.cache_resource
 def get_ocr():
     return easyocr.Reader(['en'], gpu=False)
@@ -48,11 +48,7 @@ def normalizar_texto(texto):
         texto = texto.replace(k, v)
     return texto
 
-PATRONES = [
-    r'^[A-Z]{2}\d{6}$',
-    r'^[A-Z]{3}\d{6}$',
-    r'^[A-Z]{3}\d{4}$'
-]
+PATRONES = [r'^[A-Z]{2}\d{6}$', r'^[A-Z]{3}\d{6}$', r'^[A-Z]{3}\d{4}$']
 
 def extraer_serie(resultados):
     mejor = None
@@ -66,6 +62,10 @@ def extraer_serie(resultados):
     return mejor
 
 def detectar_serie(image):
+    if image.shape[0] > 1200:
+        scale = 1200 / image.shape[0]
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    
     reader = get_ocr()
     recorte = recortar_zona_serial(image)
     proc = preprocesar(recorte)
@@ -74,8 +74,7 @@ def detectar_serie(image):
     return serie, recorte
 
 # ==================== DATABASE ====================
-
-@st.cache_resource(show_spinner="Conectando a la base de datos...")
+@st.cache_resource(show_spinner="Conectando a MySQL...")
 def get_db():
     try:
         conn = mysql.connector.connect(
@@ -85,27 +84,34 @@ def get_db():
             password=st.secrets["db"]["password"],
             database=st.secrets["db"]["database"],
             autocommit=True,
-            connection_timeout=300,
+            connection_timeout=180,
             ssl_disabled=True
         )
         return conn
     except Exception as e:
-        st.error(f"❌ Error al conectar con la base de datos: {str(e)}")
+        st.error(f"❌ Error de conexión: {e}")
         st.stop()
 
-
 def get_cursor(dictionary=False):
-    """Obtiene cursor seguro con reconexión automática"""
     conn = get_db()
     try:
         conn.ping(reconnect=True, attempts=3, delay=5)
-    except Exception as e:
-        st.error(f"❌ Error de reconexión a la base de datos: {e}")
+    except:
+        st.error("❌ Error de reconexión")
         st.stop()
     return conn.cursor(dictionary=dictionary)
 
-# ==================== LOGIN ====================
+# ==================== FUNCIÓN GLOBAL PARA UNIDADES (CORREGIDO) ====================
+@st.cache_data(ttl=60)
+def get_unidades():
+    try:
+        cur = get_cursor(dictionary=True)
+        cur.execute("SELECT * FROM unidades ORDER BY `UNIT #` DESC")
+        return pd.DataFrame(cur.fetchall())
+    except:
+        return pd.DataFrame()
 
+# ==================== LOGIN ====================
 if "login" not in st.session_state:
     st.session_state.login = False
     st.session_state.user = ""
@@ -113,7 +119,6 @@ if "login" not in st.session_state:
 
 if not st.session_state.login:
     st.title("🔐 Login")
-    
     u = st.text_input("Usuario")
     p = st.text_input("Password", type="password")
 
@@ -122,7 +127,6 @@ if not st.session_state.login:
             cur = get_cursor(dictionary=True)
             cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (u, p))
             user = cur.fetchone()
-
             if user:
                 st.session_state.login = True
                 st.session_state.user = u
@@ -133,11 +137,9 @@ if not st.session_state.login:
                 st.error("❌ Credenciales incorrectas")
         except Exception as e:
             st.error(f"Error en login: {e}")
-    
     st.stop()
 
-# ==================== MENU ====================
-
+# ==================== MENÚ ====================
 menu_options = ["Ingreso Series", "Mis Tareas", "Dashboard"]
 if st.session_state.role == "admin":
     menu_options.insert(2, "Admin")
@@ -145,7 +147,6 @@ if st.session_state.role == "admin":
 menu = st.sidebar.radio("Menú", menu_options)
 
 # ==================== INGRESO SERIES ====================
-
 if menu == "Ingreso Series":
     st.subheader("📸 Escaneo / Ingreso de Series")
 
@@ -153,25 +154,19 @@ if menu == "Ingreso Series":
     valor = ""
 
     if uploaded:
-        img_bytes = np.asarray(bytearray(uploaded.read()), dtype=np.uint8)
-        img = cv2.imdecode(img_bytes, 1)
+        with st.spinner("Analizando imagen con OCR..."):
+            img_bytes = np.asarray(bytearray(uploaded.read()), dtype=np.uint8)
+            img = cv2.imdecode(img_bytes, 1)
+            serie, recorte = detectar_serie(img)
+            st.image(recorte, caption="Zona analizada", use_column_width=True)
 
-        serie, recorte = detectar_serie(img)
-        st.image(recorte, caption="Zona analizada por OCR", use_column_width=True)
+            if serie:
+                st.success(f"✅ Serie detectada: **{serie}**")
+                valor = serie
+            else:
+                st.warning("⚠️ No se detectó automáticamente")
 
-        if serie:
-            st.success(f"✅ Serie detectada: **{serie}**")
-            valor = serie
-        else:
-            st.warning("⚠️ No se detectó la serie automáticamente")
-
-    # Cargar unidades
-    try:
-        cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM unidades ORDER BY `UNIT #` DESC")
-        df = pd.DataFrame(cur.fetchall())
-    except:
-        df = pd.DataFrame()
+    df = get_unidades()
 
     if not df.empty:
         opciones = df["UNIT #"].astype(str).tolist()
@@ -194,91 +189,127 @@ if menu == "Ingreso Series":
 
     if st.button("💾 Guardar", type="primary"):
         if not valor or len(valor) < 5:
-            st.error("❌ La serie debe tener al menos 5 caracteres")
+            st.error("La serie debe tener al menos 5 caracteres")
         else:
             try:
                 cur = get_cursor()
                 col = campos[campo]
-
                 if nuevo:
-                    cur.execute(f"INSERT INTO unidades (`UNIT #`, {col}) VALUES (%s, %s)", 
-                               (unidad, valor))
+                    cur.execute(f"INSERT INTO unidades (`UNIT #`, {col}) VALUES (%s, %s)", (unidad, valor))
                 else:
-                    cur.execute(f"UPDATE unidades SET {col}=%s WHERE `UNIT #`=%s", 
-                               (valor, unidad))
-                
+                    cur.execute(f"UPDATE unidades SET {col}=%s WHERE `UNIT #`=%s", (valor, unidad))
                 st.success("✅ Guardado correctamente")
+                st.cache_data.clear()
                 st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
-# ==================== MIS TAREAS ====================
-
-elif menu == "Mis Tareas":
-    st.subheader("📋 Mis Tareas Asignadas")
-    try:
-        cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM asignaciones WHERE tecnico = %s", (st.session_state.user,))
-        df_tareas = pd.DataFrame(cur.fetchall())
-        
-        if not df_tareas.empty:
-            st.dataframe(df_tareas, use_container_width=True)
-        else:
-            st.info("No tienes tareas asignadas por el momento.")
-    except Exception as e:
-        st.error(f"Error al cargar tareas: {e}")
-
-# ==================== ADMIN ====================
-
+# ==================== ADMIN - ASIGNAR TAREAS ====================
 elif menu == "Admin" and st.session_state.role == "admin":
-    st.subheader("🔧 Asignar Tareas")
+    st.subheader("🔧 Asignar Tareas por Lote y VIN")
+
+    ACTIVIDADES = [
+        "Cableado", "Cerrado", "Corriendo", "Inspeccion", "Pretrip",
+        "Programación", "Soldadura en sitio", "Vacíos", "Accesorios",
+        "Alarma", "toma de valores", "Evidencia", "lista para irse", "standby"
+    ]
+
     try:
         cur = get_cursor(dictionary=True)
-        
         cur.execute("SELECT * FROM lotes")
         lotes = pd.DataFrame(cur.fetchall())
-        
-        cur.execute("SELECT * FROM actividades")
-        acts = pd.DataFrame(cur.fetchall())
-        
         cur.execute("SELECT username FROM users WHERE role='tecnico'")
-        tec = pd.DataFrame(cur.fetchall())
+        tecnicos = pd.DataFrame(cur.fetchall())
+        df_unidades = get_unidades()
 
-        if lotes.empty or acts.empty or tec.empty:
-            st.warning("Faltan datos en las tablas de lotes, actividades o técnicos.")
+        if lotes.empty or tecnicos.empty or df_unidades.empty:
+            st.warning("Faltan datos en lotes, técnicos o unidades.")
         else:
-            l = st.selectbox("Lote", lotes["nombre_lote"])
-            a = st.selectbox("Actividad", acts["nombre"])
-            t = st.selectbox("Técnico", tec["username"])
+            lote_sel = st.selectbox("Lote", lotes["nombre_lote"])
+            unidad_sel = st.selectbox("VIN / Unidad", df_unidades["UNIT #"].astype(str).tolist())
+            actividad_sel = st.selectbox("Actividad", ACTIVIDADES)
+            tecnico_sel = st.selectbox("Técnico", tecnicos["username"])
 
-            if st.button("Asignar Tarea", type="primary"):
-                lid = lotes[lotes["nombre_lote"] == l]["id"].iloc[0]
-                aid = acts[acts["nombre"] == a]["id"].iloc[0]
-
+            if st.button("📌 Asignar Tarea", type="primary"):
+                lid = lotes[lotes["nombre_lote"] == lote_sel]["id"].iloc[0]
                 cur = get_cursor()
-                cur.execute(
-                    "INSERT INTO asignaciones (lote_id, actividad_id, tecnico, estado) "
-                    "VALUES (%s, %s, %s, 'pendiente')",
-                    (lid, aid, t)
-                )
-                st.success("✅ Tarea asignada correctamente")
+                cur.execute("""
+                    INSERT INTO asignaciones 
+                    (lote_id, unidad, actividad_id, tecnico, estado)
+                    VALUES (%s, %s, %s, %s, 'pendiente')
+                """, (lid, unidad_sel, actividad_sel, tecnico_sel))
+                st.success(f"✅ Tarea asignada a {tecnico_sel} → {unidad_sel} ({actividad_sel})")
+                st.rerun()
     except Exception as e:
         st.error(f"Error en Admin: {e}")
 
-# ==================== DASHBOARD ====================
+# ==================== MIS TAREAS ====================
+elif menu == "Mis Tareas":
+    st.subheader("📋 Mis Tareas")
 
-elif menu == "Dashboard":
-    st.subheader("📊 Dashboard")
     try:
         cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM asignaciones WHERE estado='completada'")
+        cur.execute("""
+            SELECT id, unidad, actividad_id as actividad, estado, 
+                   start_time, duracion_minutos, fecha_asignacion
+            FROM asignaciones 
+            WHERE tecnico = %s
+            ORDER BY fecha_asignacion DESC
+        """, (st.session_state.user,))
+        df_tareas = pd.DataFrame(cur.fetchall())
+
+        if df_tareas.empty:
+            st.info("No tienes tareas asignadas.")
+        else:
+            for idx, tarea in df_tareas.iterrows():
+                with st.expander(f"🔧 {tarea['unidad']} - {tarea['actividad']} ({tarea['estado']})", expanded=True):
+                    col1, col2, col3 = st.columns([2, 2, 3])
+                    with col1:
+                        if st.button("▶️ Iniciar", key=f"start_{tarea['id']}"):
+                            cur = get_cursor()
+                            cur.execute("UPDATE asignaciones SET start_time = NOW(), estado = 'en_progreso' WHERE id = %s", (tarea['id'],))
+                            st.success("⏱️ Tiempo iniciado")
+                            st.rerun()
+                    with col2:
+                        if st.button("⏹️ Detener y Completar", key=f"stop_{tarea['id']}"):
+                            cur = get_cursor()
+                            cur.execute("""
+                                UPDATE asignaciones 
+                                SET end_time = NOW(),
+                                    duracion_minutos = TIMESTAMPDIFF(MINUTE, start_time, NOW()),
+                                    estado = 'completada'
+                                WHERE id = %s
+                            """, (tarea['id'],))
+                            st.success("✅ Tarea completada")
+                            st.rerun()
+                    st.caption(f"Tiempo acumulado: **{tarea.get('duracion_minutos', 0)} minutos**")
+    except Exception as e:
+        st.error(f"Error cargando tareas: {e}")
+
+# ==================== DASHBOARD ====================
+elif menu == "Dashboard":
+    st.subheader("📊 Dashboard General")
+    try:
+        cur = get_cursor(dictionary=True)
+        cur.execute("""
+            SELECT tecnico, unidad, actividad_id as actividad, 
+                   duracion_minutos, fecha_asignacion
+            FROM asignaciones 
+            WHERE estado = 'completada'
+        """)
         df = pd.DataFrame(cur.fetchall())
 
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
-            if "duracion_minutos" in df.columns:
-                st.bar_chart(df["duracion_minutos"])
-        else:
+        if df.empty:
             st.info("Aún no hay tareas completadas.")
+        else:
+            st.dataframe(df, use_container_width=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Tiempo total", f"{df['duracion_minutos'].sum()} min")
+            with col2:
+                st.metric("Tareas completadas", len(df))
+
+            st.subheader("Tiempo por Técnico")
+            st.bar_chart(df.groupby("tecnico")["duracion_minutos"].sum())
     except Exception as e:
-        st.error(f"Error al cargar dashboard: {e}")
+        st.error(f"Error en dashboard: {e}")

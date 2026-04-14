@@ -1,35 +1,83 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-from PIL import Image, ImageEnhance, ImageFilter
-import easyocr
-import io
-import re
 from datetime import datetime
+import cv2
+import numpy as np
+import easyocr
+import re
 
-# ==================== CONFIGURACIÓN ====================
-st.set_page_config(page_title="Carrier Transicold - Escaneo de Series", 
-                   page_icon="📷", layout="wide")
+# ==================== CONFIG ====================
+st.set_page_config(page_title="Carrier Transicold - Gestión", page_icon="📋", layout="wide")
 
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
 st.markdown(f"""
-    <style>
-        .main-header {{ font-size: 2.4rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; }}
-        .stButton>button {{ background-color: {CARRIER_BLUE}; color: white; border-radius: 8px; font-weight: bold; height: 3.2em; }}
-    </style>
+<style>
+.main-header {{ font-size: 2.4rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; }}
+.stButton>button {{ background-color: {CARRIER_BLUE}; color: white; border-radius: 8px; font-weight: bold; }}
+</style>
 """, unsafe_allow_html=True)
 
-col_logo, col_title = st.columns([1, 4])
+col_logo, col_title = st.columns([1,4])
 with col_logo:
     st.image(LOGO_URL, width=260)
 with col_title:
-    st.markdown('<h1 class="main-header">ESCANEO DE SERIES</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">CARRIER TRANSICOLD</h1>', unsafe_allow_html=True)
 
-# ==================== CONEXIÓN A BD ====================
+# ==================== OCR ====================
+
 @st.cache_resource
-def get_db_connection():
+def get_ocr():
+    return easyocr.Reader(['en'], gpu=False)
+
+def preprocesar(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5,5), 0)
+    thresh = cv2.threshold(blur, 150, 255, cv2.THRESH_BINARY)[1]
+    return thresh
+
+def recortar_zona_serial(image):
+    h, w, _ = image.shape
+    return image[int(h*0.60):h, 0:w]
+
+def normalizar_texto(texto):
+    texto = texto.upper()
+    reemplazos = {"O": "0", "S": "5"}
+    for k, v in reemplazos.items():
+        texto = texto.replace(k, v)
+    return texto
+
+PATRONES = [
+    r'^[A-Z]{2}\d{6}$',
+    r'^[A-Z]{3}\d{6}$',
+    r'^[A-Z]{3}\d{4}$'
+]
+
+def extraer_serie(resultados):
+    mejor = None
+    mejor_score = 0
+    for (_, texto, prob) in resultados:
+        texto = normalizar_texto(texto)
+        for p in PATRONES:
+            if re.match(p, texto) and prob > mejor_score:
+                mejor = texto
+                mejor_score = prob
+    return mejor
+
+def detectar_serie(image):
+    reader = get_ocr()
+    recorte = recortar_zona_serial(image)
+    proc = preprocesar(recorte)
+    resultados = reader.readtext(proc)
+    serie = extraer_serie(resultados)
+    return serie, recorte
+
+# ==================== DB ====================
+
+@st.cache_resource
+def get_db():
     return mysql.connector.connect(
         host=st.secrets["db"]["host"],
         port=st.secrets["db"]["port"],
@@ -40,158 +88,146 @@ def get_db_connection():
     )
 
 # ==================== LOGIN ====================
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.username = ""
 
-if not st.session_state.logged_in:
-    st.title("🔐 Iniciar Sesión")
-    username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
-    
-    if st.button("Ingresar", type="primary", use_container_width=True):
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", 
-                         (username, password))
-            if cursor.fetchone():
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.success("✅ Bienvenido")
-                st.rerun()
-            else:
-                st.error("❌ Credenciales incorrectas")
-        except Exception as e:
-            st.error(f"Error de conexión: {e}")
+if "login" not in st.session_state:
+    st.session_state.login = False
+    st.session_state.user = ""
+    st.session_state.role = ""
+
+if not st.session_state.login:
+    st.title("🔐 Login")
+    u = st.text_input("Usuario")
+    p = st.text_input("Password", type="password")
+
+    if st.button("Entrar"):
+        conn = get_db()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM users WHERE username=%s AND password=%s",(u,p))
+        user = cur.fetchone()
+
+        if user:
+            st.session_state.login = True
+            st.session_state.user = u
+            st.session_state.role = user.get("role","tecnico")
+            st.rerun()
+        else:
+            st.error("Credenciales incorrectas")
+
     st.stop()
 
-# ==================== CARGAR DATOS ====================
-conn = get_db_connection()
-try:
-    df = pd.read_sql("SELECT * FROM `unidades` ORDER BY `N` DESC", conn)
-except Exception as e:
-    st.error(f"Error cargando datos: {e}")
-    df = pd.DataFrame()
+# ==================== MENU ====================
 
-# ==================== INFORMACIÓN LATERAL ====================
-st.sidebar.success(f"**Técnico:** {st.session_state.username}")
-st.sidebar.info(f"**Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-st.sidebar.info(f"**Unidades registradas:** {len(df)}")
+menu = st.sidebar.radio("Menu",[
+    "Ingreso Series",
+    "Mis Tareas",
+    "Admin" if st.session_state.role=="admin" else None,
+    "Dashboard"
+])
 
-# ==================== SELECCIÓN DE UNIDAD ====================
-st.subheader("Selecciona o crea unidad")
-col1, col2 = st.columns([3, 1])
+conn = get_db()
 
-with col1:
+# ==================== INGRESO ====================
+
+if menu == "Ingreso Series":
+
+    st.subheader("📸 Escaneo / Ingreso")
+
+    uploaded = st.file_uploader("Subir imagen", type=["jpg","png","jpeg"])
+    valor = ""
+
+    if uploaded:
+        img_bytes = np.asarray(bytearray(uploaded.read()), dtype=np.uint8)
+        img = cv2.imdecode(img_bytes,1)
+
+        serie, recorte = detectar_serie(img)
+
+        st.image(recorte, caption="Zona analizada")
+
+        if serie:
+            st.success(f"Serie detectada: {serie}")
+            valor = serie
+        else:
+            st.error("No detectada")
+
+    try:
+        df = pd.read_sql("SELECT * FROM unidades ORDER BY `UNIT #` DESC", conn)
+    except:
+        df = pd.DataFrame()
+
     if not df.empty:
         opciones = df["UNIT #"].astype(str).tolist()
-        opciones.append("+ Nueva Unidad")
-        selected_unit = st.selectbox("Unidad", opciones, key="unit_select")
+        opciones.append("+ Nueva")
+        unidad = st.selectbox("Unidad", opciones)
     else:
-        selected_unit = st.text_input("UNIT #", value="563580", key="new_unit")
+        unidad = st.text_input("Unidad")
 
-is_new = selected_unit == "+ Nueva Unidad" or df.empty
+    nuevo = unidad == "+ Nueva" or df.empty
 
-# Campo a actualizar
-campos = {
-    "VIN NUMBER": "`VIN NUMBER`",
-    "REEFER SERIAL NDUG7CN0-AH-A": "`REEFER SERIAL NDUG7CN0-AH-A`",
-    "ENGINE SERIAL": "`ENGINE SERIAL`",
-    "COMPRESSOR SERIAL": "`COMPRESSOR SERIAL`",
-    "CARB": "`CARB`"
-}
+    campos = {
+        "VIN": "`VIN NUMBER`",
+        "REEFER": "`REEFER SERIAL NDUG7CN0-AH-A`",
+        "ENGINE": "`ENGINE SERIAL`",
+        "COMPRESSOR": "`COMPRESSOR SERIAL`"
+    }
 
-campo_seleccionado = st.selectbox("Campo a actualizar", options=list(campos.keys()))
+    campo = st.selectbox("Campo", list(campos.keys()))
 
-# ==================== CAPTURA + OCR MEJORADO ====================
-st.subheader("📸 Captura del número de serie")
+    valor = st.text_input("Serie", value=valor)
 
-imagen = st.camera_input("Toma foto directamente", key="camara")
-if imagen is None:
-    uploaded = st.file_uploader("O sube foto desde galería", 
-                               type=["jpg", "jpeg", "png"])
-    if uploaded:
-        imagen = uploaded
+    if st.button("Guardar"):
+        if not valor or len(valor) < 5:
+            st.error("Serie inválida")
+            st.stop()
 
-if imagen is not None:
-    st.image(imagen, caption="Imagen capturada", use_column_width=True)
-    
-    with st.spinner("🔍 Procesando imagen y extrayendo número de serie..."):
-        try:
-            pil_image = Image.open(io.BytesIO(imagen.getvalue()))
-            
-            # Procesamiento avanzado para placas metálicas reflectantes
-            gray = pil_image.convert('L')
-            enhanced = ImageEnhance.Contrast(gray).enhance(4.0)
-            sharpened = ImageEnhance.Sharpness(enhanced).enhance(3.0)
-            denoised = sharpened.filter(ImageFilter.MedianFilter(size=3))
-            
-            if "reader" not in st.session_state:
-                st.session_state.reader = easyocr.Reader(['en'], gpu=False)
-            
-            # Lectura detallada
-            resultados = st.session_state.reader.readtext(denoised, detail=1, 
-                                                        paragraph=False, 
-                                                        text_threshold=0.5)
-            
-            texto_completo = " ".join([res[1] for res in resultados]).upper()
-            
-            # Patrones optimizados para Hyundai Translead
-            patrones = [
-                r'VJ\d{6,8}',           # Serial más común (VJ024012)
-                r'\b[A-Z]{2}\d{6,8}\b', # Dos letras + números
-                r'\b\d{8,12}\b',        # Solo números largos
-            ]
-            
-            serial_encontrado = None
-            for patron in patrones:
-                matches = re.findall(patron, texto_completo)
-                if matches:
-                    serial_encontrado = max(matches, key=len)
-                    break
-            
-            texto_extraido = serial_encontrado or texto_completo[:60]
-            
-        except Exception as e:
-            st.error(f"Error en OCR: {e}")
-            texto_extraido = ""
+        cur = conn.cursor()
+        col = campos[campo]
 
-    st.success(f"**Serie detectada:** {texto_extraido}")
-    
-    valor_final = st.text_input("Confirma o corrige el número de serie", 
-                               value=texto_extraido, key="valor_serie")
-
-    if st.button("💾 GUARDAR EN BASE DE DATOS", type="primary", use_container_width=True):
-        if not valor_final or valor_final.strip() == "":
-            st.error("El número de serie no puede estar vacío")
+        if nuevo:
+            cur.execute(f"INSERT INTO unidades (`UNIT #`, {col}) VALUES (%s,%s)",(unidad,valor))
         else:
-            try:
-                cursor = conn.cursor()
-                columna_db = campos[campo_seleccionado]
-                
-                if is_new:
-                    query = f"INSERT INTO `unidades` (`UNIT #`, {columna_db}) VALUES (%s, %s)"
-                    cursor.execute(query, (selected_unit, valor_final.strip()))
-                    st.success(f"✅ Nueva unidad **{selected_unit}** creada correctamente")
-                else:
-                    query = f"UPDATE `unidades` SET {columna_db} = %s WHERE `UNIT #` = %s"
-                    cursor.execute(query, (valor_final.strip(), selected_unit))
-                    st.success(f"✅ {campo_seleccionado} actualizado correctamente")
-                
-                st.rerun()
-                
-            except mysql.connector.Error as err:
-                st.error(f"❌ Error MySQL ({err.errno}): {err.msg}")
-            except Exception as e:
-                st.error(f"Error inesperado: {e}")
-            finally:
-                if 'cursor' in locals():
-                    cursor.close()
+            cur.execute(f"UPDATE unidades SET {col}=%s WHERE `UNIT #`=%s",(valor,unidad))
 
-# ==================== TABLA ====================
-st.divider()
-st.subheader("📊 Tabla actual")
-st.dataframe(df, use_container_width=True, height=500)
+        st.success("Guardado")
+        st.rerun()
 
-st.caption("Carrier Transicold • Sistema de Escaneo de Series v2.1")
+# ==================== TAREAS ====================
+
+elif menu == "Mis Tareas":
+    st.subheader("Mis tareas")
+    df = pd.read_sql("SELECT * FROM asignaciones WHERE tecnico=%s", conn, params=[st.session_state.user])
+    st.dataframe(df)
+
+# ==================== ADMIN ====================
+
+elif menu == "Admin" and st.session_state.role=="admin":
+
+    st.subheader("Asignar tareas")
+
+    lotes = pd.read_sql("SELECT * FROM lotes", conn)
+    acts = pd.read_sql("SELECT * FROM actividades", conn)
+    tec = pd.read_sql("SELECT username FROM users WHERE role='tecnico'", conn)
+
+    l = st.selectbox("Lote", lotes["nombre_lote"])
+    a = st.selectbox("Actividad", acts["nombre"])
+    t = st.selectbox("Tecnico", tec["username"])
+
+    if st.button("Asignar"):
+        lid = lotes[lotes["nombre_lote"]==l]["id"].iloc[0]
+        aid = acts[acts["nombre"]==a]["id"].iloc[0]
+
+        cur = conn.cursor()
+        cur.execute("INSERT INTO asignaciones (lote_id,actividad_id,tecnico) VALUES (%s,%s,%s)",(lid,aid,t))
+
+        st.success("Asignado")
+
+# ==================== DASHBOARD ====================
+
+elif menu == "Dashboard":
+    st.subheader("Dashboard")
+
+    df = pd.read_sql("SELECT * FROM asignaciones WHERE estado='completada'", conn)
+
+    if not df.empty:
+        st.bar_chart(df["duracion_minutos"])
+    else:
+        st.info("Sin datos")

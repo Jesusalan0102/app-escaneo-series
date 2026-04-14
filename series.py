@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-from datetime import datetime
 import cv2
 import numpy as np
 import easyocr
@@ -81,27 +80,27 @@ def get_db():
     try:
         conn = mysql.connector.connect(
             host=st.secrets["db"]["host"],
-            port=st.secrets["db"]["port"],
+            port=int(st.secrets["db"]["port"]),
             user=st.secrets["db"]["user"],
             password=st.secrets["db"]["password"],
             database=st.secrets["db"]["database"],
             autocommit=True,
             connection_timeout=300,
-            keep_alive=True,
             ssl_disabled=True
         )
         return conn
     except Exception as e:
-        st.error(f"❌ Error al conectar con la base de datos: {e}")
+        st.error(f"❌ Error al conectar con la base de datos: {str(e)}")
         st.stop()
 
+
 def get_cursor(dictionary=False):
-    """Obtiene un cursor seguro reconectando si es necesario"""
+    """Obtiene cursor seguro con reconexión automática"""
     conn = get_db()
     try:
         conn.ping(reconnect=True, attempts=3, delay=5)
-    except:
-        st.error("❌ No se pudo reconectar a la base de datos")
+    except Exception as e:
+        st.error(f"❌ Error de reconexión a la base de datos: {e}")
         st.stop()
     return conn.cursor(dictionary=dictionary)
 
@@ -114,10 +113,11 @@ if "login" not in st.session_state:
 
 if not st.session_state.login:
     st.title("🔐 Login")
+    
     u = st.text_input("Usuario")
     p = st.text_input("Password", type="password")
 
-    if st.button("Entrar"):
+    if st.button("Entrar", type="primary"):
         try:
             cur = get_cursor(dictionary=True)
             cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (u, p))
@@ -127,12 +127,12 @@ if not st.session_state.login:
                 st.session_state.login = True
                 st.session_state.user = u
                 st.session_state.role = user.get("role", "tecnico")
-                st.success(f"Bienvenido, {u} 👋")
+                st.success(f"✅ Bienvenido, {u}")
                 st.rerun()
             else:
-                st.error("Credenciales incorrectas")
+                st.error("❌ Credenciales incorrectas")
         except Exception as e:
-            st.error(f"Error durante el login: {e}")
+            st.error(f"Error en login: {e}")
     
     st.stop()
 
@@ -150,7 +150,6 @@ if menu == "Ingreso Series":
     st.subheader("📸 Escaneo / Ingreso de Series")
 
     uploaded = st.file_uploader("Subir imagen de la placa", type=["jpg", "png", "jpeg"])
-
     valor = ""
 
     if uploaded:
@@ -164,7 +163,7 @@ if menu == "Ingreso Series":
             st.success(f"✅ Serie detectada: **{serie}**")
             valor = serie
         else:
-            st.warning("⚠️ No se pudo detectar la serie automáticamente")
+            st.warning("⚠️ No se detectó la serie automáticamente")
 
     # Cargar unidades
     try:
@@ -195,7 +194,7 @@ if menu == "Ingreso Series":
 
     if st.button("💾 Guardar", type="primary"):
         if not valor or len(valor) < 5:
-            st.error("La serie debe tener al menos 5 caracteres")
+            st.error("❌ La serie debe tener al menos 5 caracteres")
         else:
             try:
                 cur = get_cursor()
@@ -207,7 +206,7 @@ if menu == "Ingreso Series":
                 else:
                     cur.execute(f"UPDATE unidades SET {col}=%s WHERE `UNIT #`=%s", 
                                (valor, unidad))
-
+                
                 st.success("✅ Guardado correctamente")
                 st.rerun()
             except Exception as e:
@@ -219,8 +218,7 @@ elif menu == "Mis Tareas":
     st.subheader("📋 Mis Tareas Asignadas")
     try:
         cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM asignaciones WHERE tecnico = %s", 
-                   (st.session_state.user,))
+        cur.execute("SELECT * FROM asignaciones WHERE tecnico = %s", (st.session_state.user,))
         df_tareas = pd.DataFrame(cur.fetchall())
         
         if not df_tareas.empty:
@@ -234,7 +232,6 @@ elif menu == "Mis Tareas":
 
 elif menu == "Admin" and st.session_state.role == "admin":
     st.subheader("🔧 Asignar Tareas")
-
     try:
         cur = get_cursor(dictionary=True)
         
@@ -247,23 +244,24 @@ elif menu == "Admin" and st.session_state.role == "admin":
         cur.execute("SELECT username FROM users WHERE role='tecnico'")
         tec = pd.DataFrame(cur.fetchall())
 
-        if not lotes.empty and not acts.empty and not tec.empty:
+        if lotes.empty or acts.empty or tec.empty:
+            st.warning("Faltan datos en las tablas de lotes, actividades o técnicos.")
+        else:
             l = st.selectbox("Lote", lotes["nombre_lote"])
             a = st.selectbox("Actividad", acts["nombre"])
             t = st.selectbox("Técnico", tec["username"])
 
-            if st.button("Asignar Tarea"):
+            if st.button("Asignar Tarea", type="primary"):
                 lid = lotes[lotes["nombre_lote"] == l]["id"].iloc[0]
                 aid = acts[acts["nombre"] == a]["id"].iloc[0]
 
                 cur = get_cursor()
                 cur.execute(
-                    "INSERT INTO asignaciones (lote_id, actividad_id, tecnico) VALUES (%s, %s, %s)",
+                    "INSERT INTO asignaciones (lote_id, actividad_id, tecnico, estado) "
+                    "VALUES (%s, %s, %s, 'pendiente')",
                     (lid, aid, t)
                 )
                 st.success("✅ Tarea asignada correctamente")
-        else:
-            st.warning("Faltan datos en lotes, actividades o técnicos.")
     except Exception as e:
         st.error(f"Error en Admin: {e}")
 
@@ -277,8 +275,9 @@ elif menu == "Dashboard":
         df = pd.DataFrame(cur.fetchall())
 
         if not df.empty:
-            st.bar_chart(df["duracion_minutos"] if "duracion_minutos" in df.columns else df)
             st.dataframe(df, use_container_width=True)
+            if "duracion_minutos" in df.columns:
+                st.bar_chart(df["duracion_minutos"])
         else:
             st.info("Aún no hay tareas completadas.")
     except Exception as e:

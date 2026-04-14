@@ -1,6 +1,6 @@
 streamlit
-pandas
 mysql-connector-python
+pandas
+opencv-python-headless
+numpy
 easyocr
-pillow
-openpyxl

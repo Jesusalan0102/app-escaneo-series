@@ -24,7 +24,6 @@ st.markdown(f"""
 @st.cache_resource(show_spinner="Conectando a la base de datos...")
 def get_db():
     try:
-        # Usa las credenciales configuradas en los Secrets de Streamlit
         return mysql.connector.connect(
             host=st.secrets["db"]["host"],
             port=int(st.secrets["db"]["port"]),
@@ -72,7 +71,6 @@ with st.sidebar:
     st.markdown(f"**Usuario:** {st.session_state.user} ({st.session_state.role})")
     st.divider()
     
-    # Notificación de actividades pendientes para el técnico logueado
     st.subheader("📋 Mis Actividades")
     try:
         cur = get_cursor(dictionary=True)
@@ -88,7 +86,6 @@ with st.sidebar:
         pass
 
     st.divider()
-    # Menú dinámico según el rol
     menu_options = ["📸 Registro de Series"]
     if st.session_state.role == "admin":
         menu_options.extend(["🎯 Asignar Tareas", "📊 Dashboard Admin"])
@@ -100,11 +97,10 @@ with st.sidebar:
         st.session_state.login = False
         st.rerun()
 
-# ==================== 1. REGISTRO DE SERIES (ADMIN Y TÉCNICO) ====================
+# ==================== 1. REGISTRO DE SERIES ====================
 if menu == "📸 Registro de Series":
     st.markdown('<h1 class="main-header">REGISTRO DE UNIDADES</h1>', unsafe_allow_html=True)
     
-    # Obtener lista de unidades existentes
     cur = get_cursor(dictionary=True)
     cur.execute("SELECT unit_number, vin_number FROM unidades")
     unidades_db = pd.DataFrame(cur.fetchall())
@@ -119,7 +115,6 @@ if menu == "📸 Registro de Series":
             u_final = st.selectbox("Unit Number", unidades_db["unit_number"] if not unidades_db.empty else ["Vacío"])
     
     with col2:
-        # Selección del campo a registrar para permitir múltiples series por unidad
         campo = st.selectbox("Campo a registrar", ["vin_number", "reefer", "engine_serial", "compressor_serial"])
         valor = st.text_input("Número de Serie / Valor")
 
@@ -127,7 +122,6 @@ if menu == "📸 Registro de Series":
         if u_final and valor:
             try:
                 cur = get_cursor()
-                # Lógica ON DUPLICATE KEY para evitar errores de entrada duplicada y permitir actualizaciones
                 sql = f"INSERT INTO unidades (unit_number, {campo}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {campo}=%s"
                 cur.execute(sql, (u_final, valor, valor))
                 st.success(f"✅ ¡Guardado! {campo} registrado para unidad {u_final}")
@@ -142,7 +136,6 @@ if menu == "📸 Registro de Series":
 elif menu == "🎯 Asignar Tareas" and st.session_state.role == "admin":
     st.markdown('<h1 class="main-header">PANEL DE ADMINISTRADOR</h1>', unsafe_allow_html=True)
     
-    # Solo se pueden asignar tareas a unidades que ya tengan VIN registrado
     cur = get_cursor(dictionary=True)
     cur.execute("SELECT unit_number, vin_number FROM unidades WHERE vin_number IS NOT NULL")
     u_validas = pd.DataFrame(cur.fetchall())
@@ -158,23 +151,20 @@ elif menu == "🎯 Asignar Tareas" and st.session_state.role == "admin":
         col1, col2 = st.columns(2)
         with col1:
             u_opt = u_validas.apply(lambda x: f"{x['unit_number']} (VIN: {x['vin_number']})", axis=1)
-            u_sel = st.selectbox("Unidad (Unit Number + VIN)", u_opt)
+            u_sel = st.selectbox("Seleccionar Unidad", u_opt)
             tec_sel = st.selectbox("Asignar a Técnico", tecnicos_db["username"])
         
         with col2:
-            # Lista completa de 14 actividades
-            act_lista = [
-                "Cableado", "Cerrado", "Corriendo", "Inspeccion", "Pretrip", 
-                "Programación", "Soldadura en sitio", "Vacíos", "Accesorios", 
-                "Alarma", "toma de valores", "Evidencia", "lista para irse", "standby"
-            ]
+            act_lista = ["Cableado", "Cerrado", "Corriendo", "Inspeccion", "Pretrip", 
+                         "Programación", "Soldadura en sitio", "Vacíos", "Accesorios", 
+                         "Alarma", "toma de valores", "Evidencia", "lista para irse", "standby"]
             act_sel = st.selectbox("Actividad a realizar", act_lista)
 
         if st.button("📌 Confirmar Asignación", type="primary"):
-            u_id_final = u_sel.split(" ")[0] # Extraer el número de unidad
+            u_id_final = u_sel.split(" ")[0]
             try:
                 cur = get_cursor()
-                # Insertar tarea vinculada a la unidad y técnico específico
+                # Asegúrate de haber ejecutado el ALTER TABLE mencionado arriba
                 sql = "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')"
                 cur.execute(sql, (u_id_final, act_sel, tec_sel))
                 st.success(f"Tarea '{act_sel}' asignada con éxito a {tec_sel}")
@@ -184,10 +174,9 @@ elif menu == "🎯 Asignar Tareas" and st.session_state.role == "admin":
                 st.error(f"Error al asignar tarea: {e}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# ==================== 3. MIS TAREAS (SÓLO TÉCNICO) ====================
+# ==================== 3. MIS TAREAS (TÉCNICO) ====================
 elif menu == "🛠️ Mis Tareas":
     st.subheader(f"Gestión de Tareas para: {st.session_state.user}")
-    
     try:
         cur = get_cursor(dictionary=True)
         cur.execute("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
@@ -195,30 +184,23 @@ elif menu == "🛠️ Mis Tareas":
         cur.close()
 
         if not tareas:
-            st.info("No tienes tareas pendientes asignadas.")
+            st.info("No tienes tareas pendientes.")
         for t in tareas:
-            with st.expander(f"📦 Unidad {t['unidad']} - {t['actividad_id']} ({t['estado']})"):
+            with st.expander(f"📦 Unidad {t['unidad']} - {t['actividad_id']}"):
                 if t['estado'] == 'pendiente':
-                    if st.button("▶️ Iniciar Tarea", key=f"start_{t['id']}"):
+                    if st.button("▶️ Iniciar", key=f"start_{t['id']}"):
                         cur = get_cursor()
                         cur.execute("UPDATE asignaciones SET estado='en_progreso', start_time=NOW() WHERE id=%s", (t['id'],))
                         st.rerun()
                 elif t['estado'] == 'en_progreso':
-                    if st.button("✅ Terminar Tarea", key=f"end_{t['id']}"):
+                    if st.button("✅ Terminar", key=f"end_{t['id']}"):
                         cur = get_cursor()
-                        cur.execute("""
-                            UPDATE asignaciones 
-                            SET estado='completada', 
-                                end_time=NOW(),
-                                duracion_minutos = TIMESTAMPDIFF(MINUTE, start_time, NOW()) 
-                            WHERE id=%s
-                        """, (t['id'],))
-                        st.success("¡Tarea completada!")
+                        cur.execute("UPDATE asignaciones SET estado='completada', end_time=NOW(), duracion_minutos = TIMESTAMPDIFF(MINUTE, start_time, NOW()) WHERE id=%s", (t['id'],))
                         st.rerun()
     except Exception as e:
         st.error(f"Error al cargar tareas: {e}")
 
-# ==================== 4. DASHBOARD (SÓLO ADMIN) ====================
+# ==================== 4. DASHBOARD ====================
 elif menu == "📊 Dashboard Admin":
     st.subheader("Estado General de la Operación")
     try:
@@ -226,12 +208,7 @@ elif menu == "📊 Dashboard Admin":
         cur.execute("SELECT * FROM asignaciones")
         df_all = pd.DataFrame(cur.fetchall())
         cur.close()
-
         if not df_all.empty:
             st.dataframe(df_all, use_container_width=True)
-            st.subheader("Resumen por Estado")
-            st.bar_chart(df_all['estado'].value_counts())
-        else:
-            st.info("No hay datos de actividades registrados.")
-    except Exception as e:
-        st.error(f"Error en Dashboard: {e}")
+    except:
+        st.error("Error al cargar dashboard.")

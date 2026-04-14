@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 import easyocr
 import re
-from datetime import datetime
 
 # ==================== CONFIG ====================
 st.set_page_config(page_title="Carrier Transicold - Gestión", page_icon="📋", layout="wide")
@@ -26,55 +25,8 @@ with col_logo:
 with col_title:
     st.markdown('<h1 class="main-header">CARRIER TRANSICOLD</h1>', unsafe_allow_html=True)
 
-# ==================== OCR (OPTIMIZADO) ====================
-@st.cache_resource
-def get_ocr():
-    return easyocr.Reader(['en'], gpu=False)
-
-def preprocesar(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    thresh = cv2.threshold(blur, 150, 255, cv2.THRESH_BINARY)[1]
-    return thresh
-
-def recortar_zona_serial(image):
-    h, w, _ = image.shape
-    return image[int(h * 0.60):h, 0:w]
-
-def normalizar_texto(texto):
-    texto = texto.upper()
-    reemplazos = {"O": "0", "S": "5", "I": "1", "B": "8"}
-    for k, v in reemplazos.items():
-        texto = texto.replace(k, v)
-    return texto
-
-PATRONES = [r'^[A-Z]{2}\d{6}$', r'^[A-Z]{3}\d{6}$', r'^[A-Z]{3}\d{4}$']
-
-def extraer_serie(resultados):
-    mejor = None
-    mejor_score = 0
-    for (_, texto, prob) in resultados:
-        texto = normalizar_texto(texto)
-        for p in PATRONES:
-            if re.match(p, texto) and prob > mejor_score:
-                mejor = texto
-                mejor_score = prob
-    return mejor
-
-def detectar_serie(image):
-    if image.shape[0] > 1200:
-        scale = 1200 / image.shape[0]
-        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    
-    reader = get_ocr()
-    recorte = recortar_zona_serial(image)
-    proc = preprocesar(recorte)
-    resultados = reader.readtext(proc)
-    serie = extraer_serie(resultados)
-    return serie, recorte
-
 # ==================== DATABASE ====================
-@st.cache_resource(show_spinner="Conectando a MySQL...")
+@st.cache_resource(show_spinner="Conectando a BD...")
 def get_db():
     try:
         conn = mysql.connector.connect(
@@ -84,8 +36,7 @@ def get_db():
             password=st.secrets["db"]["password"],
             database=st.secrets["db"]["database"],
             autocommit=True,
-            connection_timeout=180,
-            ssl_disabled=True
+            connection_timeout=120
         )
         return conn
     except Exception as e:
@@ -101,15 +52,43 @@ def get_cursor(dictionary=False):
         st.stop()
     return conn.cursor(dictionary=dictionary)
 
-# ==================== FUNCIÓN GLOBAL PARA UNIDADES (CORREGIDO) ====================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def get_unidades():
     try:
         cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM unidades ORDER BY `UNIT #` DESC")
-        return pd.DataFrame(cur.fetchall())
+        # Ajustado al nombre real: unit_number
+        cur.execute("SELECT * FROM unidades ORDER BY unit_number DESC")
+        res = cur.fetchall()
+        cur.close()
+        return pd.DataFrame(res)
     except:
         return pd.DataFrame()
+
+# ==================== OCR ====================
+@st.cache_resource
+def get_ocr():
+    return easyocr.Reader(['en'], gpu=False)
+
+def detectar_serie(image):
+    if image.shape[0] > 1200:
+        scale = 1200 / image.shape[0]
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    reader = get_ocr()
+    recorte = image[int(image.shape[0]*0.60):, :]
+    gray = cv2.cvtColor(recorte, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5,5), 0)
+    proc = cv2.threshold(blur, 150, 255, cv2.THRESH_BINARY)[1]
+    resultados = reader.readtext(proc)
+    
+    mejor = None
+    mejor_score = 0
+    for (_, texto, prob) in resultados:
+        texto = texto.upper().replace("O","0").replace("S","5").replace("I","1").replace("B","8").strip()
+        for p in [r'^[A-Z]{2}\d{6}$', r'^[A-Z]{3}\d{6}$', r'^[A-Z]{3}\d{4}$']:
+            if re.match(p, texto) and prob > mejor_score:
+                mejor = texto
+                mejor_score = prob
+    return mejor, recorte
 
 # ==================== LOGIN ====================
 if "login" not in st.session_state:
@@ -127,6 +106,7 @@ if not st.session_state.login:
             cur = get_cursor(dictionary=True)
             cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (u, p))
             user = cur.fetchone()
+            cur.close()
             if user:
                 st.session_state.login = True
                 st.session_state.user = u
@@ -136,7 +116,7 @@ if not st.session_state.login:
             else:
                 st.error("❌ Credenciales incorrectas")
         except Exception as e:
-            st.error(f"Error en login: {e}")
+            st.error("Error en login")
     st.stop()
 
 # ==================== MENÚ ====================
@@ -151,68 +131,70 @@ if menu == "Ingreso Series":
     st.subheader("📸 Escaneo / Ingreso de Series")
 
     uploaded = st.file_uploader("Subir imagen de la placa", type=["jpg", "png", "jpeg"])
-    valor = ""
+    valor_ocr = ""
 
     if uploaded:
-        with st.spinner("Analizando imagen con OCR..."):
+        with st.spinner("Analizando imagen..."):
             img_bytes = np.asarray(bytearray(uploaded.read()), dtype=np.uint8)
             img = cv2.imdecode(img_bytes, 1)
             serie, recorte = detectar_serie(img)
-            st.image(recorte, caption="Zona analizada", use_column_width=True)
-
+            st.image(recorte, caption="Zona analizada", use_container_width=True)
             if serie:
                 st.success(f"✅ Serie detectada: **{serie}**")
-                valor = serie
+                valor_ocr = serie
             else:
-                st.warning("⚠️ No se detectó automáticamente")
+                st.warning("⚠️ No se detectó la serie")
 
     df = get_unidades()
+    # Ajustado al nombre real: unit_number
+    opciones = df["unit_number"].astype(str).tolist() if not df.empty else []
+    opciones.insert(0, "+ Nueva")
+    unidad_sel = st.selectbox("Seleccionar Unidad", opciones)
 
-    if not df.empty:
-        opciones = df["UNIT #"].astype(str).tolist()
-        opciones.append("+ Nueva")
-        unidad = st.selectbox("Unidad", opciones)
-    else:
-        unidad = st.text_input("Unidad")
-
-    nuevo = unidad == "+ Nueva" or df.empty
-
-    campos = {
-        "VIN": "`VIN NUMBER`",
-        "REEFER": "`REEFER SERIAL NDUG7CN0-AH-A`",
-        "ENGINE": "`ENGINE SERIAL`",
-        "COMPRESSOR": "`COMPRESSOR SERIAL`"
+    nuevo = (unidad_sel == "+ Nueva")
+    
+    # Mapeo de campos amigables a nombres reales de la DB
+    mapa_campos = {
+        "VIN": "vin_number",
+        "REEFER": "reefer",
+        "ENGINE": "engine_serial",
+        "COMPRESSOR": "compressor_serial"
     }
+    
+    campo_label = st.selectbox("Campo a registrar", list(mapa_campos.keys()))
+    campo_db = mapa_campos[campo_label]
+    
+    if nuevo:
+        id_final = st.text_input("Escribe el nuevo número de unidad")
+    else:
+        id_final = unidad_sel
 
-    campo = st.selectbox("Campo a registrar", list(campos.keys()))
-    valor = st.text_input("Serie / Número", value=valor)
+    valor_final = st.text_input("Serie / Número", value=valor_ocr)
 
     if st.button("💾 Guardar", type="primary"):
-        if not valor or len(valor) < 5:
-            st.error("La serie debe tener al menos 5 caracteres")
+        if not valor_final or not id_final:
+            st.error("Faltan datos por completar")
         else:
             try:
                 cur = get_cursor()
-                col = campos[campo]
                 if nuevo:
-                    cur.execute(f"INSERT INTO unidades (`UNIT #`, {col}) VALUES (%s, %s)", (unidad, valor))
+                    cur.execute(f"INSERT INTO unidades (unit_number, {campo_db}) VALUES (%s, %s)", (id_final, valor_final))
                 else:
-                    cur.execute(f"UPDATE unidades SET {col}=%s WHERE `UNIT #`=%s", (valor, unidad))
+                    cur.execute(f"UPDATE unidades SET {campo_db} = %s WHERE unit_number = %s", (valor_final, id_final))
+                cur.close()
                 st.success("✅ Guardado correctamente")
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
-# ==================== ADMIN - ASIGNAR TAREAS ====================
+# ==================== ADMIN ====================
 elif menu == "Admin" and st.session_state.role == "admin":
-    st.subheader("🔧 Asignar Tareas por Lote y VIN")
+    st.subheader("🔧 Asignar Tareas")
 
-    ACTIVIDADES = [
-        "Cableado", "Cerrado", "Corriendo", "Inspeccion", "Pretrip",
-        "Programación", "Soldadura en sitio", "Vacíos", "Accesorios",
-        "Alarma", "toma de valores", "Evidencia", "lista para irse", "standby"
-    ]
+    ACTIVIDADES = ["Cableado", "Cerrado", "Corriendo", "Inspeccion", "Pretrip", 
+                   "Programación", "Soldadura en sitio", "Vacíos", "Accesorios", 
+                   "Alarma", "toma de valores", "Evidencia", "lista para irse", "standby"]
 
     try:
         cur = get_cursor(dictionary=True)
@@ -221,24 +203,23 @@ elif menu == "Admin" and st.session_state.role == "admin":
         cur.execute("SELECT username FROM users WHERE role='tecnico'")
         tecnicos = pd.DataFrame(cur.fetchall())
         df_unidades = get_unidades()
+        cur.close()
 
-        if lotes.empty or tecnicos.empty or df_unidades.empty:
-            st.warning("Faltan datos en lotes, técnicos o unidades.")
-        else:
-            lote_sel = st.selectbox("Lote", lotes["nombre_lote"])
-            unidad_sel = st.selectbox("VIN / Unidad", df_unidades["UNIT #"].astype(str).tolist())
-            actividad_sel = st.selectbox("Actividad", ACTIVIDADES)
-            tecnico_sel = st.selectbox("Técnico", tecnicos["username"])
+        lote_sel = st.selectbox("Lote", lotes["nombre_lote"] if not lotes.empty else ["Sin lotes"])
+        unidad_sel = st.selectbox("Unidad / VIN", df_unidades["unit_number"].astype(str).tolist() if not df_unidades.empty else ["Sin unidades"])
+        actividad_sel = st.selectbox("Actividad", ACTIVIDADES)
+        tecnico_sel = st.selectbox("Técnico", tecnicos["username"] if not tecnicos.empty else ["Sin técnicos"])
 
-            if st.button("📌 Asignar Tarea", type="primary"):
+        if st.button("📌 Asignar Tarea", type="primary"):
+            if lote_sel and unidad_sel and tecnico_sel:
                 lid = lotes[lotes["nombre_lote"] == lote_sel]["id"].iloc[0]
                 cur = get_cursor()
                 cur.execute("""
-                    INSERT INTO asignaciones 
-                    (lote_id, unidad, actividad_id, tecnico, estado)
+                    INSERT INTO asignaciones (lote_id, unidad, actividad_id, tecnico, estado)
                     VALUES (%s, %s, %s, %s, 'pendiente')
                 """, (lid, unidad_sel, actividad_sel, tecnico_sel))
-                st.success(f"✅ Tarea asignada a {tecnico_sel} → {unidad_sel} ({actividad_sel})")
+                cur.close()
+                st.success(f"Tarea asignada a {tecnico_sel}")
                 st.rerun()
     except Exception as e:
         st.error(f"Error en Admin: {e}")
@@ -251,65 +232,64 @@ elif menu == "Mis Tareas":
         cur = get_cursor(dictionary=True)
         cur.execute("""
             SELECT id, unidad, actividad_id as actividad, estado, 
-                   start_time, duracion_minutos, fecha_asignacion
+                   duracion_minutos, fecha_asignacion
             FROM asignaciones 
-            WHERE tecnico = %s
+            WHERE tecnico = %s 
             ORDER BY fecha_asignacion DESC
         """, (st.session_state.user,))
         df_tareas = pd.DataFrame(cur.fetchall())
+        cur.close()
 
         if df_tareas.empty:
-            st.info("No tienes tareas asignadas.")
+            st.info("No tienes tareas asignadas aún.")
         else:
-            for idx, tarea in df_tareas.iterrows():
-                with st.expander(f"🔧 {tarea['unidad']} - {tarea['actividad']} ({tarea['estado']})", expanded=True):
-                    col1, col2, col3 = st.columns([2, 2, 3])
-                    with col1:
-                        if st.button("▶️ Iniciar", key=f"start_{tarea['id']}"):
+            for _, tarea in df_tareas.iterrows():
+                with st.expander(f"🔧 {tarea['unidad']} - {tarea['actividad']} ({tarea['estado']})"):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("▶️ Iniciar", key=f"i{tarea['id']}"):
                             cur = get_cursor()
-                            cur.execute("UPDATE asignaciones SET start_time = NOW(), estado = 'en_progreso' WHERE id = %s", (tarea['id'],))
-                            st.success("⏱️ Tiempo iniciado")
+                            cur.execute("UPDATE asignaciones SET start_time=NOW(), estado='en_progreso' WHERE id=%s", (tarea['id'],))
+                            cur.close()
+                            st.success("⏱️ Iniciado")
                             st.rerun()
-                    with col2:
-                        if st.button("⏹️ Detener y Completar", key=f"stop_{tarea['id']}"):
+                    with c2:
+                        if st.button("⏹️ Completar", key=f"c{tarea['id']}"):
                             cur = get_cursor()
                             cur.execute("""
                                 UPDATE asignaciones 
-                                SET end_time = NOW(),
+                                SET end_time=NOW(), 
                                     duracion_minutos = TIMESTAMPDIFF(MINUTE, start_time, NOW()),
-                                    estado = 'completada'
-                                WHERE id = %s
+                                    estado='completada'
+                                WHERE id=%s
                             """, (tarea['id'],))
+                            cur.close()
                             st.success("✅ Tarea completada")
                             st.rerun()
-                    st.caption(f"Tiempo acumulado: **{tarea.get('duracion_minutos', 0)} minutos**")
+                    st.caption(f"Tiempo: **{tarea['duracion_minutos']}** minutos")
     except Exception as e:
         st.error(f"Error cargando tareas: {e}")
 
 # ==================== DASHBOARD ====================
 elif menu == "Dashboard":
-    st.subheader("📊 Dashboard General")
+    st.subheader("📊 Dashboard")
     try:
         cur = get_cursor(dictionary=True)
-        cur.execute("""
-            SELECT tecnico, unidad, actividad_id as actividad, 
-                   duracion_minutos, fecha_asignacion
-            FROM asignaciones 
-            WHERE estado = 'completada'
-        """)
+        cur.execute("SELECT tecnico, unidad, actividad_id as actividad, duracion_minutos FROM asignaciones WHERE estado='completada'")
         df = pd.DataFrame(cur.fetchall())
+        cur.close()
 
         if df.empty:
-            st.info("Aún no hay tareas completadas.")
+            st.info("Aún no hay tareas completadas")
         else:
             st.dataframe(df, use_container_width=True)
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Tiempo total", f"{df['duracion_minutos'].sum()} min")
+                st.metric("Tiempo Total", f"{df['duracion_minutos'].sum()} min")
             with col2:
-                st.metric("Tareas completadas", len(df))
+                st.metric("Tareas Completadas", len(df))
 
             st.subheader("Tiempo por Técnico")
             st.bar_chart(df.groupby("tecnico")["duracion_minutos"].sum())
     except Exception as e:
-        st.error(f"Error en dashboard: {e}")
+        st.error(f"Error en Dashboard: {e}")

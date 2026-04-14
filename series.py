@@ -16,7 +16,6 @@ st.markdown(f"""
 <style>
 .main-header {{ font-size: 2.4rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; }}
 .stButton>button {{ background-color: {CARRIER_BLUE}; color: white; border-radius: 8px; font-weight: bold; }}
-.sidebar-task {{ padding: 10px; border-bottom: 1px solid #eee; font-size: 0.9rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -24,8 +23,13 @@ st.markdown(f"""
 @st.cache_resource(show_spinner="Conectando a BD...")
 def get_db():
     try:
+        # Credenciales actualizadas según tu configuración de Clever Cloud
         conn = mysql.connector.connect(
-            **st.secrets["db"],
+            host="bmffi0bgsqnener2omcu-mysql.services.clever-cloud.com",
+            port=3306,
+            user="uo8vbdsnvm2ojwta",
+            password="aXSKib5oxXDEwjlozeQP",
+            database="bmffi0bgsqnener2omcu",
             autocommit=True,
             connection_timeout=120
         )
@@ -47,6 +51,7 @@ def get_cursor(dictionary=False):
 def get_unidades():
     try:
         cur = get_cursor(dictionary=True)
+        # Usamos el nombre de columna real verificado en la estructura
         cur.execute("SELECT * FROM unidades ORDER BY unit_number DESC")
         res = cur.fetchall()
         cur.close()
@@ -61,9 +66,7 @@ if "login" not in st.session_state:
     st.session_state.role = ""
 
 if not st.session_state.login:
-    col_logo, col_title = st.columns([1, 3])
-    with col_logo: st.image(LOGO_URL, width=200)
-    st.title("🔐 Acceso al Sistema")
+    st.title("🔐 Acceso Carrier")
     u = st.text_input("Usuario")
     p = st.text_input("Password", type="password")
 
@@ -81,37 +84,31 @@ if not st.session_state.login:
             st.error("❌ Credenciales incorrectas")
     st.stop()
 
-# ==================== SIDEBAR (TAREAS ASIGNADAS) ====================
+# ==================== MENÚ Y SIDEBAR ====================
 with st.sidebar:
     st.image(LOGO_URL, width=150)
-    st.markdown(f"**Usuario:** {st.session_state.user} ({st.session_state.role})")
+    st.markdown(f"**Usuario:** {st.session_state.user}")
     st.divider()
     
+    # Notificación de actividades en la parte izquierda
     st.subheader("📋 Mis Actividades")
     try:
         cur = get_cursor(dictionary=True)
-        cur.execute("SELECT unidad, actividad_id, estado FROM asignaciones WHERE tecnico = %s AND estado != 'completada'", (st.session_state.user,))
-        tareas_side = cur.fetchall()
+        cur.execute("SELECT unidad, actividad_id FROM asignaciones WHERE tecnico = %s AND estado != 'completada'", (st.session_state.user,))
+        tareas = cur.fetchall()
         cur.close()
-        
-        if not tareas_side:
-            st.info("No hay tareas pendientes")
-        for t in tareas_side:
-            color = "orange" if t['estado'] == 'en_progreso' else "gray"
-            st.markdown(f"""
-            <div class="sidebar-task">
-                <b style="color:{color}">●</b> {t['unidad']}<br>
-                <small>{t['actividad_id']}</small>
-            </div>
-            """, unsafe_allow_html=True)
+        if tareas:
+            for t in tareas:
+                st.write(f"● {t['unidad']} - {t['actividad_id']}")
+        else:
+            st.info("Sin tareas pendientes")
     except:
-        st.error("Error al cargar sidebar")
+        pass
 
     st.divider()
-    menu_options = ["📸 Ingreso Series", "📝 Gestionar Tareas"]
+    menu_options = ["📸 Ingreso Series"]
     if st.session_state.role == "admin":
-        menu_options.append("⚙️ Panel Admin")
-        menu_options.append("📊 Dashboard")
+        menu_options.append("📊 Dashboard Admin")
     
     menu = st.radio("Navegación", menu_options)
     
@@ -119,12 +116,10 @@ with st.sidebar:
         st.session_state.login = False
         st.rerun()
 
-# ==================== INGRESO SERIES ====================
+# ==================== CONTENIDO PRINCIPAL ====================
 if menu == "📸 Ingreso Series":
     st.markdown('<h1 class="main-header">CARRIER TRANSICOLD</h1>', unsafe_allow_html=True)
-    st.subheader("Ingreso de Componentes por Unidad")
-
-    # Selección de Unidad
+    
     df_u = get_unidades()
     lista_u = df_u["unit_number"].astype(str).tolist() if not df_u.empty else []
     lista_u.insert(0, "+ Nueva Unidad")
@@ -132,31 +127,25 @@ if menu == "📸 Ingreso Series":
     sel_u = st.selectbox("Seleccione Unit Number", lista_u)
     
     if sel_u == "+ Nueva Unidad":
-        unit_final = st.text_input("Ingrese Nuevo Unit Number")
+        unit_final = st.text_input("Escriba el nuevo Unit Number")
     else:
         unit_final = sel_u
 
-    # Configuración de Campos
     mapa_campos = {
         "VIN": "vin_number",
         "REEFER": "reefer",
         "ENGINE": "engine_serial",
         "COMPRESSOR": "compressor_serial"
     }
-    campo_label = st.selectbox("Componente a registrar", list(mapa_campos.keys()))
+    campo_label = st.selectbox("Elemento a registrar", list(mapa_campos.keys()))
     campo_db = mapa_campos[campo_label]
+    valor_final = st.text_input(f"Número de Serie para {campo_label}")
 
-    # OCR / Carga
-    uploaded = st.file_uploader("Escanear Placa", type=["jpg", "png", "jpeg"])
-    valor_final = st.text_input("Número de Serie / Valor", key="val_input")
-
-    if st.button("💾 Guardar en Base de Datos", type="primary"):
-        if not unit_final or not valor_final:
-            st.warning("⚠️ Complete el Unit Number y el Valor")
-        else:
+    if st.button("💾 Guardar y Notificar", type="primary"):
+        if unit_final and valor_final:
             try:
                 cur = get_cursor()
-                # Lógica: Si existe el unit_number, actualiza solo el campo elegido. Si no existe, lo crea.
+                # Esta sentencia permite agregar múltiples series a un mismo Unit Number
                 sql = f"""
                     INSERT INTO unidades (unit_number, {campo_db}) 
                     VALUES (%s, %s) 
@@ -165,23 +154,15 @@ if menu == "📸 Ingreso Series":
                 cur.execute(sql, (unit_final, valor_final, valor_final))
                 cur.close()
                 
-                st.success(f"✅ ¡Guardado con éxito! Se ha registrado el {campo_label} para la unidad {unit_final}.")
-                st.balloons()
+                st.success(f"✅ ¡Registro Exitoso! {campo_label} guardado para la unidad {unit_final}.")
+                st.balloons() # Notificación visual
                 st.cache_data.clear()
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error al guardar: {e}")
+        else:
+            st.warning("⚠️ Complete todos los campos antes de guardar")
 
-# ==================== GESTIONAR TAREAS (TÉCNICO) ====================
-elif menu == "📝 Gestionar Tareas":
-    st.subheader("Mis Tareas Asignadas")
-    # ... (Misma lógica de Iniciar/Completar que tenías, pero filtrando por el usuario actual)
-
-# ==================== PANEL ADMIN ====================
-elif menu == "⚙️ Panel Admin" and st.session_state.role == "admin":
-    st.subheader("Asignación de Tareas (Solo Administrador)")
-    # ... (Lógica para INSERT en la tabla asignaciones)
-
-# ==================== DASHBOARD ====================
-elif menu == "📊 Dashboard" and st.session_state.role == "admin":
-    st.subheader("Estado General de Lotes")
-    # ... (Gráficos y tablas de tiempos totales)
+elif menu == "📊 Dashboard Admin":
+    st.subheader("Estado General de Tareas")
+    st.info("Solo visible para el administrador.")
+    # Aquí puedes agregar tablas de la tabla 'asignaciones'

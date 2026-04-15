@@ -1,59 +1,47 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-import cv2
-import numpy as np
-import easyocr
-import re
+import plotly.express as px # Librería para gráficos profesionales
 
-# ==================== CONFIGURACIÓN DE PÁGINA ====================
-st.set_page_config(page_title="Carrier Transicold - Gestión", page_icon="📋", layout="wide")
+# ==================== CONFIGURACIÓN ====================
+st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout="wide")
 
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
+# Estilos CSS profesionales
 st.markdown(f"""
 <style>
-.main-header {{ font-size: 2.4rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; }}
-.stButton>button {{ background-color: {CARRIER_BLUE}; color: white; border-radius: 8px; font-weight: bold; }}
-.admin-box {{ padding: 15px; border: 2px solid {CARRIER_BLUE}; border-radius: 10px; background-color: #f8f9fa; }}
+    .main-header {{ font-size: 2.2rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
+    .metric-card {{ background-color: #ffffff; padding: 20px; border-radius: 10px; border-left: 5px solid {CARRIER_BLUE}; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); }}
+    .stButton>button {{ width: 100%; border-radius: 5px; height: 3em; background-color: {CARRIER_BLUE}; color: white; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== CONEXIÓN A BASE DE DATOS ====================
-@st.cache_resource(show_spinner="Conectando a la base de datos...")
+# ==================== CONEXIÓN A DB ====================
 def get_db():
-    try:
-        return mysql.connector.connect(
-            host=st.secrets["db"]["host"],
-            port=int(st.secrets["db"]["port"]),
-            user=st.secrets["db"]["user"],
-            password=st.secrets["db"]["password"],
-            database=st.secrets["db"]["database"],
-            autocommit=True
-        )
-    except Exception as e:
-        st.error(f"❌ Error de conexión: {e}")
-        st.stop()
+    return mysql.connector.connect(
+        host=st.secrets["db"]["host"],
+        port=int(st.secrets["db"]["port"]),
+        user=st.secrets["db"]["user"],
+        password=st.secrets["db"]["password"],
+        database=st.secrets["db"]["database"],
+        autocommit=True
+    )
 
 def get_cursor(dictionary=False):
     conn = get_db()
-    try:
-        conn.ping(reconnect=True, attempts=3, delay=2)
-    except:
-        st.error("❌ La conexión con la base de datos se perdió.")
-        st.stop()
     return conn.cursor(dictionary=dictionary)
 
-# ==================== LÓGICA DE LOGIN ====================
+# ==================== LOGIN ====================
 if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
 
 if not st.session_state.login:
-    st.title("🔐 Acceso al Sistema")
+    st.title("🔐 Acceso Carrier")
     u = st.text_input("Usuario")
     p = st.text_input("Contraseña", type="password")
-    if st.button("Entrar", type="primary"):
+    if st.button("Entrar"):
         cur = get_cursor(dictionary=True)
         cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (u, p))
         user = cur.fetchone()
@@ -61,154 +49,150 @@ if not st.session_state.login:
         if user:
             st.session_state.update({"login": True, "user": u, "role": user['role']})
             st.rerun()
-        else:
-            st.error("Credenciales incorrectas")
     st.stop()
 
-# ==================== BARRA LATERAL (SIDEBAR) ====================
+# ==================== SIDEBAR ====================
 with st.sidebar:
     st.image(LOGO_URL, width=150)
-    st.markdown(f"**Usuario:** {st.session_state.user} ({st.session_state.role})")
+    st.write(f"💼 **Perfil:** {st.session_state.role.upper()}")
     st.divider()
-    
-    st.subheader("📋 Mis Actividades")
-    try:
-        cur = get_cursor(dictionary=True)
-        cur.execute("SELECT unidad, actividad_id FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-        tareas_side = cur.fetchall()
-        cur.close()
-        if tareas_side:
-            for t in tareas_side:
-                st.write(f"● {t['unidad']} - {t['actividad_id']}")
-        else:
-            st.info("Sin tareas pendientes")
-    except:
-        pass
-
-    st.divider()
-    menu_options = ["📸 Registro de Series"]
-    if st.session_state.role == "admin":
-        menu_options.extend(["🎯 Asignar Tareas", "📊 Dashboard Admin"])
-    else:
-        menu_options.append("🛠️ Mis Tareas")
-    
-    menu = st.sidebar.radio("Navegación", menu_options)
+    opts = ["📸 Registro de Unidades", "🎯 Asignación de Tareas", "📊 Dashboard Operativo"]
+    menu = st.radio("Menú Principal", opts)
     if st.button("Cerrar Sesión"):
         st.session_state.login = False
         st.rerun()
 
-# ==================== 1. REGISTRO DE SERIES ====================
-if menu == "📸 Registro de Series":
-    st.markdown('<h1 class="main-header">REGISTRO DE UNIDADES</h1>', unsafe_allow_html=True)
+# ==================== 1. REGISTRO (CON LOTE) ====================
+if menu == "📸 Registro de Unidades":
+    st.markdown('<div class="main-header">REGISTRO DE SERIES Y COMPONENTES</div>', unsafe_allow_html=True)
     
-    cur = get_cursor(dictionary=True)
-    cur.execute("SELECT unit_number, vin_number FROM unidades")
-    unidades_db = pd.DataFrame(cur.fetchall())
-    cur.close()
-
     col1, col2 = st.columns(2)
     with col1:
-        tipo = st.radio("Entrada", ["Existente", "+ Nueva"])
-        if tipo == "+ Nueva":
-            u_final = st.text_input("Nuevo Unit Number")
+        tipo = st.radio("Modo", ["Existente", "Nueva Unidad"])
+        if tipo == "Nueva Unidad":
+            u_num = st.text_input("Escriba Unit Number")
+            lote_id = st.text_input("ID de Lote (Ej: 30024429)")
         else:
-            u_final = st.selectbox("Unit Number", unidades_db["unit_number"] if not unidades_db.empty else ["Vacío"])
-    
+            cur = get_cursor(dictionary=True)
+            cur.execute("SELECT unit_number FROM unidades")
+            u_db = pd.DataFrame(cur.fetchall())
+            u_num = st.selectbox("Seleccione Unidad", u_db["unit_number"] if not u_db.empty else ["No hay datos"])
+            lote_id = None # Se mantiene el existente en DB
+
     with col2:
-        campo = st.selectbox("Campo a registrar", ["vin_number", "reefer", "engine_serial", "compressor_serial"])
-        valor = st.text_input("Número de Serie / Valor")
+        campo = st.selectbox("Componente", ["vin_number", "reefer", "engine_serial", "compressor_serial"])
+        valor = st.text_input("Valor de Serie")
 
-    if st.button("💾 Guardar Datos", type="primary"):
-        if u_final and valor:
-            try:
-                cur = get_cursor()
-                sql = f"INSERT INTO unidades (unit_number, {campo}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {campo}=%s"
-                cur.execute(sql, (u_final, valor, valor))
-                st.success(f"✅ ¡Guardado! {campo} registrado para unidad {u_final}")
-                st.balloons()
-                cur.close()
-            except Exception as e:
-                st.error(f"Error al guardar: {e}")
-        else:
-            st.warning("⚠️ Complete todos los campos")
+    if st.button("💾 Guardar Registro"):
+        if u_num and valor:
+            cur = get_cursor()
+            if tipo == "Nueva Unidad":
+                sql = f"INSERT INTO unidades (unit_number, {campo}, lote_id) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {campo}=%s, lote_id=%s"
+                cur.execute(sql, (u_num, valor, lote_id, valor, lote_id))
+            else:
+                sql = f"UPDATE unidades SET {campo}=%s WHERE unit_number=%s"
+                cur.execute(sql, (valor, u_num))
+            st.success(f"✅ Unidad {u_num} actualizada correctamente.")
+            cur.close()
 
-# ==================== 2. ASIGNACIÓN DE TAREAS (SÓLO ADMIN) ====================
-elif menu == "🎯 Asignar Tareas" and st.session_state.role == "admin":
-    st.markdown('<h1 class="main-header">PANEL DE ADMINISTRADOR</h1>', unsafe_allow_html=True)
+# ==================== 2. ASIGNACIÓN ====================
+elif menu == "🎯 Asignación de Tareas":
+    st.markdown('<div class="main-header">CONTROL DE ASIGNACIONES</div>', unsafe_allow_html=True)
     
     cur = get_cursor(dictionary=True)
-    cur.execute("SELECT unit_number, vin_number FROM unidades WHERE vin_number IS NOT NULL")
-    u_validas = pd.DataFrame(cur.fetchall())
-    
+    cur.execute("SELECT unit_number FROM unidades WHERE vin_number IS NOT NULL")
+    u_data = pd.DataFrame(cur.fetchall())
+    cur.execute("SELECT nombre FROM actividades") # Según image_cf8a86.jpg
+    act_data = pd.DataFrame(cur.fetchall())
     cur.execute("SELECT username FROM users WHERE role='tecnico'")
-    tecnicos_db = pd.DataFrame(cur.fetchall())
+    tec_data = pd.DataFrame(cur.fetchall())
     cur.close()
 
-    if u_validas.empty:
-        st.warning("⚠️ No hay unidades con VIN registrado. Regístrelas primero.")
-    else:
-        st.markdown('<div class="admin-box">', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            u_opt = u_validas.apply(lambda x: f"{x['unit_number']} (VIN: {x['vin_number']})", axis=1)
-            u_sel = st.selectbox("Seleccionar Unidad", u_opt)
-            tec_sel = st.selectbox("Asignar a Técnico", tecnicos_db["username"])
+    col1, col2, col3 = st.columns(3)
+    with col1: u_sel = st.selectbox("Unidad", u_data["unit_number"] if not u_data.empty else [])
+    with col2: tec_sel = st.selectbox("Técnico", tec_data["username"] if not tec_data.empty else [])
+    with col3: act_sel = st.selectbox("Actividad", act_data["nombre"] if not act_data.empty else ["Cableado", "Inspeccion"])
+
+    if st.button("📌 Crear Tarea"):
+        cur = get_cursor()
+        cur.execute("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_sel, act_sel, tec_sel))
+        st.success("✅ Tarea asignada exitosamente.")
+        cur.close()
+
+# ==================== 3. DASHBOARD PROFESIONAL ====================
+elif menu == "📊 Dashboard Operativo":
+    st.markdown('<div class="main-header">DASHBOARD ESTRATÉGICO DE PRODUCCIÓN</div>', unsafe_allow_html=True)
+    
+    cur = get_cursor(dictionary=True)
+    
+    # Producción General (Únicos)
+    cur.execute("SELECT COUNT(DISTINCT unit_number) as total FROM unidades")
+    prod_total = cur.fetchone()['total']
+    
+    # Productividad por Técnico
+    cur.execute("""
+        SELECT tecnico, COUNT(*) as cantidad 
+        FROM asignaciones WHERE estado='completada' GROUP BY tecnico
+    """)
+    df_tec = pd.DataFrame(cur.fetchall())
+    
+    # Estatus por Lote
+    cur.execute("""
+        SELECT lote_id, COUNT(unit_number) as total_u, 
+        SUM(CASE WHEN vin_number IS NOT NULL AND reefer IS NOT NULL THEN 1 ELSE 0 END) as completas
+        FROM unidades GROUP BY lote_id
+    """)
+    df_lotes = pd.DataFrame(cur.fetchall())
+    cur.close()
+
+    # --- KPIs Superiores ---
+    kpi1, kpi2, kpi3 = st.columns(3)
+    with kpi1:
+        st.markdown(f'<div class="metric-card"><h3>Producción Total</h3><h2>{prod_total}</h2><p>Unidades Únicas</p></div>', unsafe_allow_html=True)
+    with kpi2:
+        lotes_activos = len(df_lotes) if not df_lotes.empty else 0
+        st.markdown(f'<div class="metric-card"><h3>Lotes Activos</h3><h2>{lotes_activos}</h2><p>En operación</p></div>', unsafe_allow_html=True)
+    with kpi3:
+        tareas_hoy = df_tec['cantidad'].sum() if not df_tec.empty else 0
+        st.markdown(f'<div class="metric-card"><h3>Tareas Listas</h3><h2>{tareas_hoy}</h2><p>Productividad Total</p></div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # --- Gráficos ---
+    c_left, c_right = st.columns([1, 1])
+    
+    with c_left:
+        st.subheader("👨‍🔧 Productividad Individual")
+        if not df_tec.empty:
+            fig_tec = px.bar(df_tec, x='tecnico', y='cantidad', color='cantidad', 
+                             color_continuous_scale='Blues', labels={'cantidad':'Tareas Finalizadas'})
+            st.plotly_chart(fig_tec, use_container_width=True)
+        else:
+            st.info("No hay datos de productividad hoy.")
+
+    with c_right:
+        st.subheader("📦 Avance por Lote")
+        if not df_lotes.empty:
+            df_lotes['porcentaje'] = (df_lotes['completas'] / df_lotes['total_u']) * 100
+            fig_lote = px.pie(df_lotes, names='lote_id', values='total_u', hole=0.4, title="Distribución de Unidades")
+            st.plotly_chart(fig_lote, use_container_width=True)
+        else:
+            st.info("No hay lotes registrados.")
+
+    # --- Detalle por Lote ---
+    st.divider()
+    st.subheader("🔍 Explorador de Estatus por Lote")
+    if not df_lotes.empty:
+        lote_sel = st.selectbox("Seleccione un Lote para auditar", df_lotes['lote_id'].unique())
         
-        with col2:
-            act_lista = ["Cableado", "Cerrado", "Corriendo", "Inspeccion", "Pretrip", 
-                         "Programación", "Soldadura en sitio", "Vacíos", "Accesorios", 
-                         "Alarma", "toma de valores", "Evidencia", "lista para irse", "standby"]
-            act_sel = st.selectbox("Actividad a realizar", act_lista)
-
-        if st.button("📌 Confirmar Asignación", type="primary"):
-            u_id_final = u_sel.split(" ")[0]
-            try:
-                cur = get_cursor()
-                # Asegúrate de haber ejecutado el ALTER TABLE mencionado arriba
-                sql = "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')"
-                cur.execute(sql, (u_id_final, act_sel, tec_sel))
-                st.success(f"Tarea '{act_sel}' asignada con éxito a {tec_sel}")
-                st.balloons()
-                cur.close()
-            except Exception as e:
-                st.error(f"Error al asignar tarea: {e}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# ==================== 3. MIS TAREAS (TÉCNICO) ====================
-elif menu == "🛠️ Mis Tareas":
-    st.subheader(f"Gestión de Tareas para: {st.session_state.user}")
-    try:
         cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-        tareas = cur.fetchall()
+        cur.execute("SELECT unit_number, vin_number, reefer, engine_serial FROM unidades WHERE lote_id=%s", (lote_sel,))
+        detalle = pd.DataFrame(cur.fetchall())
         cur.close()
-
-        if not tareas:
-            st.info("No tienes tareas pendientes.")
-        for t in tareas:
-            with st.expander(f"📦 Unidad {t['unidad']} - {t['actividad_id']}"):
-                if t['estado'] == 'pendiente':
-                    if st.button("▶️ Iniciar", key=f"start_{t['id']}"):
-                        cur = get_cursor()
-                        cur.execute("UPDATE asignaciones SET estado='en_progreso', start_time=NOW() WHERE id=%s", (t['id'],))
-                        st.rerun()
-                elif t['estado'] == 'en_progreso':
-                    if st.button("✅ Terminar", key=f"end_{t['id']}"):
-                        cur = get_cursor()
-                        cur.execute("UPDATE asignaciones SET estado='completada', end_time=NOW(), duracion_minutos = TIMESTAMPDIFF(MINUTE, start_time, NOW()) WHERE id=%s", (t['id'],))
-                        st.rerun()
-    except Exception as e:
-        st.error(f"Error al cargar tareas: {e}")
-
-# ==================== 4. DASHBOARD ====================
-elif menu == "📊 Dashboard Admin":
-    st.subheader("Estado General de la Operación")
-    try:
-        cur = get_cursor(dictionary=True)
-        cur.execute("SELECT * FROM asignaciones")
-        df_all = pd.DataFrame(cur.fetchall())
-        cur.close()
-        if not df_all.empty:
-            st.dataframe(df_all, use_container_width=True)
-    except:
-        st.error("Error al cargar dashboard.")
+        
+        # Mostrar progreso del lote seleccionado
+        row = df_lotes[df_lotes['lote_id'] == lote_sel].iloc[0]
+        prog = int((row['completas'] / row['total_u']) * 100)
+        st.write(f"**Progreso del Lote {lote_sel}:** {prog}%")
+        st.progress(prog / 100)
+        st.dataframe(detalle, use_container_width=True)

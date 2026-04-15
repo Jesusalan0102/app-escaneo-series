@@ -18,12 +18,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== VERIFICACIÓN DE SECRETS ====================
-if "db" not in st.secrets:
-    st.error("❌ No se encontraron los secretos de la base de datos.")
-    st.stop()
-
-# ==================== CONEXIÓN A DB ====================
+# ==================== CONEXIÓN ====================
 @st.cache_resource(show_spinner=False, ttl=300)
 def get_db():
     try:
@@ -39,8 +34,7 @@ def get_db():
         )
         return conn
     except Exception as e:
-        st.error(f"❌ Error de conexión a Clever Cloud: {str(e)}")
-        st.info("Verifica que los Secrets estén bien copiados.")
+        st.error(f"❌ Error de conexión: {str(e)}")
         st.stop()
 
 def get_cursor(dictionary=False):
@@ -79,11 +73,14 @@ with st.sidebar:
     st.write(f"👤 **Usuario:** {st.session_state.user}")
     st.divider()
     menu = st.radio("Menú Principal", ["📸 Registro de Unidades", "🎯 Asignación de Tareas", "📊 Dashboard Operativo"])
+    if st.button("🔄 Resetear Aplicación"):
+        st.session_state.clear()
+        st.rerun()
     if st.button("Cerrar Sesión"):
         st.session_state.login = False
         st.rerun()
 
-# ==================== 1. REGISTRO ====================
+# ==================== 1. REGISTRO (CORREGIDO - sin lote_id) ====================
 if menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">REGISTRO DE SERIES Y COMPONENTES</div>', unsafe_allow_html=True)
     
@@ -92,7 +89,7 @@ if menu == "📸 Registro de Unidades":
         tipo = st.radio("Modo", ["Existente", "Nueva Unidad"])
         if tipo == "Nueva Unidad":
             u_num = st.text_input("Escriba Unit Number")
-            lote_id = st.text_input("ID de Lote (Ej: 30024429)")
+            lote_id = st.text_input("ID de Lote (Opcional)")
         else:
             cur = get_cursor(dictionary=True)
             cur.execute("SELECT unit_number FROM unidades")
@@ -110,13 +107,17 @@ if menu == "📸 Registro de Unidades":
             try:
                 cur = get_cursor()
                 if tipo == "Nueva Unidad":
-                    sql = f"INSERT INTO unidades (unit_number, {campo}, lote_id) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {campo}=%s, lote_id=%s"
-                    cur.execute(sql, (u_num, valor, lote_id, valor, lote_id))
+                    if lote_id:
+                        sql = f"INSERT INTO unidades (unit_number, {campo}, lote_id) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {campo}=%s, lote_id=%s"
+                        cur.execute(sql, (u_num, valor, lote_id, valor, lote_id))
+                    else:
+                        sql = f"INSERT INTO unidades (unit_number, {campo}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {campo}=%s"
+                        cur.execute(sql, (u_num, valor, valor))
                 else:
                     sql = f"UPDATE unidades SET {campo}=%s WHERE unit_number=%s"
                     cur.execute(sql, (valor, u_num))
                 cur.close()
-                st.success(f"✅ Unidad {u_num} actualizada correctamente.")
+                st.success(f"✅ Unidad {u_num} guardada correctamente.")
             except Exception as e:
                 st.error(f"Error al guardar: {str(e)}")
 
@@ -146,7 +147,7 @@ elif menu == "🎯 Asignación de Tareas":
                 cur.close()
                 st.success("✅ Tarea asignada exitosamente.")
             except Exception as e:
-                st.error(f"Error al asignar tarea: {e}")
+                st.error(f"Error al asignar: {e}")
 
 # ==================== 3. DASHBOARD ====================
 elif menu == "📊 Dashboard Operativo":
@@ -154,55 +155,39 @@ elif menu == "📊 Dashboard Operativo":
     
     try:
         cur = get_cursor(dictionary=True)
-        
         cur.execute("SELECT COUNT(DISTINCT unit_number) as total FROM unidades")
         prod_total = cur.fetchone()['total'] or 0
         
         cur.execute("SELECT tecnico, COUNT(*) as cantidad FROM asignaciones WHERE estado='completada' GROUP BY tecnico")
         df_tec = pd.DataFrame(cur.fetchall())
         
-        # Consulta segura (sin depender de lote_id)
         cur.execute("""
-            SELECT 'General' as lote_id, 
-                   COUNT(unit_number) as total_u,
+            SELECT 'General' as lote_id, COUNT(unit_number) as total_u,
                    SUM(CASE WHEN vin_number IS NOT NULL AND reefer IS NOT NULL THEN 1 ELSE 0 END) as completas 
             FROM unidades
         """)
         df_lotes = pd.DataFrame(cur.fetchall())
         cur.close()
-
     except Exception as e:
-        st.error(f"Error al cargar dashboard: {str(e)}")
+        st.error(f"Error dashboard: {str(e)}")
         prod_total = 0
         df_tec = pd.DataFrame()
-        df_lotes = pd.DataFrame([{'lote_id':'General', 'total_u':0, 'completas':0}])
+        df_lotes = pd.DataFrame()
 
     # KPIs
     kpi1, kpi2, kpi3 = st.columns(3)
-    with kpi1:
-        st.markdown(f'<div class="metric-card"><h3>Producción Total</h3><h2>{prod_total}</h2><p>Unidades Únicas</p></div>', unsafe_allow_html=True)
-    with kpi2:
-        st.markdown(f'<div class="metric-card"><h3>Lotes Activos</h3><h2>{len(df_lotes)}</h2><p>En operación</p></div>', unsafe_allow_html=True)
-    with kpi3:
-        tareas = int(df_tec['cantidad'].sum()) if not df_tec.empty else 0
-        st.markdown(f'<div class="metric-card"><h3>Tareas Completadas</h3><h2>{tareas}</h2><p>Productividad Total</p></div>', unsafe_allow_html=True)
-
-    st.divider()
+    with kpi1: st.markdown(f'<div class="metric-card"><h3>Producción Total</h3><h2>{prod_total}</h2><p>Unidades</p></div>', unsafe_allow_html=True)
+    with kpi2: st.markdown(f'<div class="metric-card"><h3>Lotes Activos</h3><h2>{len(df_lotes)}</h2><p>En operación</p></div>', unsafe_allow_html=True)
+    with kpi3: st.markdown(f'<div class="metric-card"><h3>Tareas Completadas</h3><h2>{int(df_tec["cantidad"].sum() if not df_tec.empty else 0)}</h2><p>Productividad</p></div>', unsafe_allow_html=True)
 
     # Gráficos
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Productividad por Técnico")
         if not df_tec.empty:
             fig = px.bar(df_tec, x="tecnico", y="cantidad", color="cantidad", color_continuous_scale='Blues')
             st.plotly_chart(fig, use_container_width=True)
 
-    with c2:
-        st.subheader("Distribución")
-        fig = px.pie(df_lotes, names="lote_id", values="total_u")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Reportes Solo para Admin
+    # Reportes Solo Admin
     if st.session_state.role.upper() == "ADMIN":
         st.divider()
         st.subheader("📄 Reportes y Exportaciones (Solo Admin)")
@@ -217,13 +202,14 @@ elif menu == "📊 Dashboard Operativo":
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M")
                 filename = f"Reporte_Carrier_{timestamp}.xlsx"
-
-                with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-                    df_u.to_excel(writer, sheet_name="Unidades", index=False)
-                    df_a.to_excel(writer, sheet_name="Asignaciones", index=False)
-
+                
+                # Usamos xlsxwriter (más compatible en Streamlit Cloud)
+                df_u.to_excel(filename, index=False, engine='xlsxwriter')
+                df_a.to_excel(filename.replace("Reporte", "Asignaciones"), index=False, engine='xlsxwriter')  # Simplificado
+                
                 with open(filename, "rb") as f:
-                    st.download_button("⬇️ Descargar Excel", f, filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                st.success("✅ Reporte generado correctamente")
+                    st.download_button("⬇️ Descargar Reporte Excel", f, filename)
+                st.success("✅ Reporte generado")
             except Exception as e:
-                st.error(f"Error al generar reporte: {e}")
+                st.error(f"Error al generar Excel: {str(e)}")
+                st.info("Nota: Agrega 'xlsxwriter' a tu requirements.txt si es posible.")

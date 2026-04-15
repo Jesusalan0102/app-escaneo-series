@@ -74,14 +74,21 @@ with st.sidebar:
     st.write(f"👤 **Usuario:** {st.session_state.user}")
     st.divider()
     menu = st.radio("Menú Principal", ["📸 Registro de Unidades", "🎯 Asignación de Tareas", "📊 Dashboard Operativo"])
-    if st.button("🔄 Resetear Aplicación"):
+    
+    if st.button("🔄 Resetear Aplicación", use_container_width=True):
+        # Limpia todo excepto el login
+        keys_to_keep = ["login", "user", "role"]
+        for key in list(st.session_state.keys()):
+            if key not in keys_to_keep:
+                del st.session_state[key]
+        st.success("✅ Aplicación reseteada")
+        st.rerun()
+        
+    if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state.clear()
         st.rerun()
-    if st.button("Cerrar Sesión"):
-        st.session_state.login = False
-        st.rerun()
 
-# ==================== 1. REGISTRO (SIN lote_id) ====================
+# ==================== 1. REGISTRO ====================
 if menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">REGISTRO DE SERIES Y COMPONENTES</div>', unsafe_allow_html=True)
     
@@ -89,25 +96,24 @@ if menu == "📸 Registro de Unidades":
     with col1:
         tipo = st.radio("Modo", ["Existente", "Nueva Unidad"])
         if tipo == "Nueva Unidad":
-            u_num = st.text_input("Escriba Unit Number")
-            lote_input = st.text_input("ID de Lote (Opcional)")
+            u_num = st.text_input("Escriba Unit Number", key="reg_unit")
+            lote_input = st.text_input("ID de Lote (Opcional)", key="reg_lote")
         else:
             cur = get_cursor(dictionary=True)
             cur.execute("SELECT unit_number FROM unidades")
             u_db = pd.DataFrame(cur.fetchall())
             cur.close()
-            u_num = st.selectbox("Seleccione Unidad", u_db["unit_number"] if not u_db.empty else ["No hay datos"])
+            u_num = st.selectbox("Seleccione Unidad", u_db["unit_number"] if not u_db.empty else ["No hay datos"], key="reg_select")
 
     with col2:
-        campo = st.selectbox("Componente", ["vin_number", "reefer", "engine_serial", "compressor_serial"])
-        valor = st.text_input("Valor de Serie")
+        campo = st.selectbox("Componente", ["vin_number", "reefer", "engine_serial", "compressor_serial"], key="reg_campo")
+        valor = st.text_input("Valor de Serie", key="reg_valor")
 
-    if st.button("💾 Guardar Registro"):
+    if st.button("💾 Guardar Registro", use_container_width=True):
         if u_num and valor:
             try:
                 cur = get_cursor()
                 if tipo == "Nueva Unidad":
-                    # Insertar SIN lote_id (columna no existe)
                     sql = f"INSERT INTO unidades (unit_number, {campo}) VALUES (%s, %s) ON DUPLICATE KEY UPDATE {campo}=%s"
                     cur.execute(sql, (u_num, valor, valor))
                 else:
@@ -118,42 +124,12 @@ if menu == "📸 Registro de Unidades":
             except Exception as e:
                 st.error(f"Error al guardar: {str(e)}")
 
-# ==================== 2. ASIGNACIÓN ====================
-elif menu == "🎯 Asignación de Tareas":
-    st.markdown('<div class="main-header">CONTROL DE ASIGNACIONES</div>', unsafe_allow_html=True)
-    
-    cur = get_cursor(dictionary=True)
-    cur.execute("SELECT unit_number FROM unidades WHERE vin_number IS NOT NULL")
-    u_data = pd.DataFrame(cur.fetchall())
-    cur.execute("SELECT nombre FROM actividades")
-    act_data = pd.DataFrame(cur.fetchall())
-    cur.execute("SELECT username FROM users WHERE role='tecnico'")
-    tec_data = pd.DataFrame(cur.fetchall())
-    cur.close()
-
-    col1, col2, col3 = st.columns(3)
-    with col1: u_sel = st.selectbox("Unidad", u_data["unit_number"] if not u_data.empty else [])
-    with col2: tec_sel = st.selectbox("Técnico", tec_data["username"] if not tec_data.empty else [])
-    with col3: act_sel = st.selectbox("Actividad", act_data["nombre"] if not act_data.empty else ["Inspeccion"])
-
-    if st.button("📌 Crear Tarea"):
-        if u_sel and tec_sel and act_sel:
-            try:
-                cur = get_cursor()
-                cur.execute("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_sel, act_sel, tec_sel))
-                cur.close()
-                st.success("✅ Tarea asignada exitosamente.")
-            except Exception as e:
-                st.error(f"Error al asignar: {e}")
-
-# ==================== 3. DASHBOARD PROFESIONAL ====================
+# ==================== DASHBOARD PROFESIONAL ====================
 elif menu == "📊 Dashboard Operativo":
     st.markdown('<div class="main-header">DASHBOARD ESTRATÉGICO DE PRODUCCIÓN</div>', unsafe_allow_html=True)
     
     try:
         cur = get_cursor(dictionary=True)
-        
-        # Datos principales
         cur.execute("SELECT COUNT(DISTINCT unit_number) as total FROM unidades")
         total_unidades = cur.fetchone()['total'] or 0
         
@@ -165,18 +141,15 @@ elif menu == "📊 Dashboard Operativo":
         
         cur.execute("SELECT COUNT(*) as pendientes FROM asignaciones WHERE estado='pendiente'")
         pendientes = cur.fetchone()['pendientes'] or 0
-        
         cur.close()
         
         avance = round((completas / total_unidades * 100), 1) if total_unidades > 0 else 0
-        
-    except Exception as e:
-        st.error(f"Error al cargar dashboard: {str(e)}")
+    except:
         total_unidades = completas = pendientes = 0
         avance = 0
         df_tec = pd.DataFrame()
 
-    # ==================== KPIs PROFESIONALES ====================
+    # KPIs
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f'<div class="metric-card"><h3>Total Unidades</h3><h2>{total_unidades}</h2><p>Registradas</p></div>', unsafe_allow_html=True)
@@ -190,39 +163,17 @@ elif menu == "📊 Dashboard Operativo":
 
     st.divider()
 
-    # ==================== GRÁFICOS ====================
-    col_g1, col_g2 = st.columns([1, 1])
-    
+    col_g1, col_g2 = st.columns([1,1])
     with col_g1:
-        st.subheader("👨‍🔧 Productividad Individual por Técnico")
+        st.subheader("👨‍🔧 Productividad Individual")
         if not df_tec.empty:
-            fig_tec = px.bar(df_tec, x='tecnico', y='cantidad', color='cantidad',
-                             color_continuous_scale='Blues', title="Tareas Completadas")
-            st.plotly_chart(fig_tec, use_container_width=True)
-        else:
-            st.info("Aún no hay tareas completadas.")
+            fig = px.bar(df_tec, x='tecnico', y='cantidad', color='cantidad', color_continuous_scale='Blues')
+            st.plotly_chart(fig, use_container_width=True)
 
-    with col_g2:
-        st.subheader("📊 Estado General")
-        data_estado = pd.DataFrame({
-            "Estado": ["Completas", "Pendientes"],
-            "Cantidad": [completas, total_unidades - completas]
-        })
-        fig_estado = px.pie(data_estado, names="Estado", values="Cantidad", hole=0.4)
-        st.plotly_chart(fig_estado, use_container_width=True)
-
-    # Tabla resumen
-    st.subheader("🔍 Resumen de Unidades")
-    cur = get_cursor(dictionary=True)
-    cur.execute("SELECT unit_number, vin_number, reefer, engine_serial, compressor_serial FROM unidades ORDER BY unit_number LIMIT 50")
-    df_resumen = pd.DataFrame(cur.fetchall())
-    cur.close()
-    st.dataframe(df_resumen, use_container_width=True)
-
-    # ==================== REPORTES SOLO ADMIN ====================
+    # Reportes Admin
     if st.session_state.role.upper() == "ADMIN":
         st.divider()
-        st.subheader("📄 Reportes y Exportaciones (Solo Admin)")
+        st.subheader("📄 Reportes (Solo Admin)")
         if st.button("📥 Exportar Todo a Excel", use_container_width=True):
             try:
                 cur = get_cursor(dictionary=True)
@@ -245,6 +196,7 @@ elif menu == "📊 Dashboard Operativo":
                     file_name=f"Reporte_Carrier_{timestamp}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                st.success("✅ Reporte generado")
+                st.success("✅ Reporte generado correctamente")
             except Exception as e:
-                st.error(f"Error al generar Excel: {e}")
+                st.error(f"Error al generar Excel: {str(e)}")
+                st.info("Asegúrate de tener 'openpyxl' en requirements.txt")

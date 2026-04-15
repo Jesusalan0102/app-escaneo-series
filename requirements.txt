@@ -1,6 +1,4 @@
 streamlit
-mysql-connector-python
 pandas
-opencv-python-headless
-numpy
-easyocr
+mysql-connector-python
+plotly

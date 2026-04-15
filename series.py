@@ -1,282 +1,220 @@
 import streamlit as st
-import pandas as pd
 import mysql.connector
-import plotly.express as px
+from mysql.connector import Error
+import pandas as pd
+from io import BytesIO
 from datetime import datetime
+import time
 
-# ==================== CONFIGURACIÓN ====================
-st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout="wide")
+# --- CONFIGURACIÓN DE ESTILO ---
+st.set_page_config(page_title="Gestión de Refrigeración Tier 1", layout="wide", page_icon="❄️")
 
-CARRIER_BLUE = "#002B5B"
-LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
+def local_css(file_name):
+    st.markdown(f'<style>{file_name}</style>', unsafe_allow_html=True)
 
-# Estilos CSS profesionales
-st.markdown(f"""
-<style>
-    .main-header {{ font-size: 2.2rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
-    .metric-card {{ background-color: #ffffff; padding: 20px; border-radius: 10px; border-left: 5px solid {CARRIER_BLUE}; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); }}
-    .stButton>button {{ width: 100%; border-radius: 5px; height: 3em; background-color: {CARRIER_BLUE}; color: white; }}
-</style>
-""", unsafe_allow_html=True)
+# CSS para mejorar la interfaz
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .stDownloadButton>button { width: 100%; border-radius: 5px; background-color: #28a745; color: white; }
+    .block-container { padding-top: 2rem; }
+    .highlight { background-color: #e1f5fe; padding: 10px; border-radius: 10px; border-left: 5px solid #01579b; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# ==================== CONEXIÓN A DB ====================
-@st.cache_resource(show_spinner=False, ttl=300)
-def get_db():
-    try:
-        conn = mysql.connector.connect(
-            host=st.secrets["db"]["host"],
-            port=int(st.secrets["db"]["port"]),
-            user=st.secrets["db"]["user"],
-            password=st.secrets["db"]["password"],
-            database=st.secrets["db"]["database"],
-            autocommit=True,
-            connection_timeout=15,
-            buffered=True
-        )
-        return conn
-    except Exception as e:
-        st.error(f"❌ Error de conexión a la base de datos: {str(e)}")
-        st.stop()
-
-def get_cursor(dictionary=False):
-    try:
-        conn = get_db()
-        if not conn.is_connected():
-            conn.reconnect(attempts=3, delay=5)
-        return conn.cursor(dictionary=dictionary)
-    except Exception as e:
-        st.error(f"❌ Error al crear cursor: {str(e)}")
-        st.stop()
-
-# ==================== LOGIN ====================
-if "login" not in st.session_state:
-    st.session_state.update({"login": False, "user": "", "role": ""})
-
-if not st.session_state.login:
-    st.title("🔐 Acceso Carrier")
-    u = st.text_input("Usuario")
-    p = st.text_input("Contraseña", type="password")
-    if st.button("Entrar"):
+# --- CLASE DE GESTIÓN DE BASE DE DATOS ---
+class DBManager:
+    def __init__(self):
         try:
-            cur = get_cursor(dictionary=True)
-            cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (u, p))
-            user = cur.fetchone()
-            cur.close()
-            if user:
-                st.session_state.update({"login": True, "user": u, "role": user['role']})
-                st.rerun()
-            else:
-                st.error("Usuario o contraseña incorrectos")
-        except Exception as e:
-            st.error(f"Error en login: {str(e)}")
-    st.stop()
+            self.config = {
+                'host': st.secrets["mysql"]["host"],
+                'user': st.secrets["mysql"]["user"],
+                'password': st.secrets["mysql"]["password"],
+                'database': st.secrets["mysql"]["database"],
+                'raise_on_warnings': True,
+                'pool_name': "mypool",
+                'pool_size': 5
+            }
+        except Exception:
+            st.error("❌ No se encontraron los Secretos de la Base de Datos.")
 
-# ==================== SIDEBAR ====================
+    def get_connection(self):
+        return mysql.connector.connect(**self.config)
+
+    def inicializar_tablas(self):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS registro_series (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    fecha_registro DATETIME,
+                    lote VARCHAR(50),
+                    unidad VARCHAR(50),
+                    serie VARCHAR(100),
+                    operador VARCHAR(100)
+                )
+            """)
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Error as e:
+            st.error(f"Error inicializando DB: {e}")
+
+    def guardar_registro(self, lote, unidad, serie):
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            query = "INSERT INTO registro_series (fecha_registro, lote, unidad, serie, operador) VALUES (%s, %s, %s, %s, %s)"
+            cursor.execute(query, (datetime.now(), lote, unidad, serie, "Admin"))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+        except Error as e:
+            st.error(f"Error al guardar: {e}")
+            return False
+
+    def obtener_todo(self):
+        try:
+            conn = self.get_connection()
+            df = pd.read_sql("SELECT * FROM registro_series ORDER BY fecha_registro DESC", conn)
+            conn.close()
+            return df
+        except:
+            return pd.DataFrame()
+
+db = DBManager()
+db.inicializar_tablas()
+
+# --- LÓGICA DE DATOS DEL TABLERO ---
+LOTES_DATA = {
+    "445": [f"{i:02d}" for i in range(1, 4)],
+    "431": [f"{i:02d}" for i in range(1, 3)],
+    "426": [f"{i:02d}" for i in range(1, 6)],
+    "443": [f"{i:02d}" for i in range(1, 4)],
+    "444": [f"{i:02d}" for i in range(1, 3)],
+    "425": [f"{i:02d}" for i in range(1, 3)],
+    "244": ["01"],
+    "458": ["01", "03", "02"],
+    "245": ["02"],
+    "258": ["04"],
+    "405": ["12"],
+    "391": [f"{i:02d}" for i in range(1, 7)]
+}
+
+# --- ESTADO DE LA SESIÓN ---
+if 'step' not in st.session_state:
+    st.session_state.step = 1
+if 'lote_sel' not in st.session_state:
+    st.session_state.lote_sel = ""
+if 'unidad_sel' not in st.session_state:
+    st.session_state.unidad_sel = ""
+
+def reset_form():
+    st.session_state.step = 1
+    st.session_state.lote_sel = ""
+    st.session_state.unidad_sel = ""
+    st.rerun()
+
+# --- SIDEBAR NAVEGACIÓN ---
 with st.sidebar:
-    st.image(LOGO_URL, width=150)
-    st.write(f"💼 **Perfil:** {st.session_state.role.upper()}")
-    st.write(f"👤 **Usuario:** {st.session_state.user}")
+    st.image("https://cdn-icons-png.flaticon.com/512/2933/2933753.png", width=100)
+    st.title("Control Tier 1")
+    opcion = st.radio("Menú Principal", ["📥 Registro Secuencial", "📊 Dashboard y Reportes", "🗄️ Histórico Completo"])
     st.divider()
-    opts = ["📸 Registro de Unidades", "🎯 Asignación de Tareas", "📊 Dashboard Operativo"]
-    menu = st.radio("Menú Principal", opts)
-    if st.button("Cerrar Sesión"):
-        st.session_state.login = False
-        st.rerun()
+    if st.button("🔄 Resetear Formulario"):
+        reset_form()
 
-# ==================== 1. REGISTRO DE UNIDADES ====================
-if menu == "📸 Registro de Unidades":
-    st.markdown('<div class="main-header">REGISTRO DE SERIES Y COMPONENTES</div>', unsafe_allow_html=True)
+# --- MÓDULO 1: REGISTRO SECUENCIAL ---
+if opcion == "📥 Registro Secuencial":
+    st.header("Entrada de Series")
     
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([2, 1])
+
     with col1:
-        tipo = st.radio("Modo", ["Existente", "Nueva Unidad"])
-        if tipo == "Nueva Unidad":
-            u_num = st.text_input("Escriba Unit Number")
-            lote_id = st.text_input("ID de Lote (Ej: 30024429)")
-        else:
-            cur = get_cursor(dictionary=True)
-            cur.execute("SELECT unit_number FROM unidades")
-            u_db = pd.DataFrame(cur.fetchall())
-            cur.close()
-            u_num = st.selectbox("Seleccione Unidad", u_db["unit_number"] if not u_db.empty else ["No hay datos"])
-            lote_id = None
+        with st.expander("Pasos de Llenado", expanded=True):
+            # PASO 1: LOTE
+            lote = st.selectbox("1. Seleccione el LOTE", [""] + list(LOTES_DATA.keys()), key="lote_box")
+            
+            if lote:
+                st.session_state.lote_sel = lote
+                # PASO 2: UNIDAD
+                unidad = st.selectbox("2. Seleccione el UNIT NUMBER", [""] + LOTES_DATA[lote], key="unit_box")
+                
+                if unidad:
+                    st.session_state.unidad_sel = unidad
+                    # PASO 3: SERIE
+                    serie = st.text_input("3. Escanee el Número de Serie", key="serie_input")
+                    
+                    if st.button("💾 GUARDAR REGISTRO"):
+                        if serie:
+                            with st.spinner('Guardando...'):
+                                exito = db.guardar_registro(lote, unidad, serie)
+                                if exito:
+                                    st.toast(f"¡Serie {serie} guardada!", icon="✅")
+                                    time.sleep(1)
+                                    st.rerun()
+                        else:
+                            st.error("El número de serie es obligatorio.")
 
     with col2:
-        campo = st.selectbox("Componente", ["vin_number", "reefer", "engine_serial", "compressor_serial"])
-        valor = st.text_input("Valor de Serie")
+        st.info("📌 **Estado Actual**")
+        st.write(f"**Lote:** {st.session_state.lote_sel}")
+        st.write(f"**Unidad:** {st.session_state.unidad_sel}")
+        if st.session_state.lote_sel and st.session_state.unidad_sel:
+            st.success("Listo para escanear")
 
-    if st.button("💾 Guardar Registro"):
-        if u_num and valor:
-            try:
-                cur = get_cursor()
-                if tipo == "Nueva Unidad":
-                    sql = f"INSERT INTO unidades (unit_number, {campo}, lote_id) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {campo}=%s, lote_id=%s"
-                    cur.execute(sql, (u_num, valor, lote_id, valor, lote_id))
-                else:
-                    sql = f"UPDATE unidades SET {campo}=%s WHERE unit_number=%s"
-                    cur.execute(sql, (valor, u_num))
-                cur.close()
-                st.success(f"✅ Unidad {u_num} actualizada correctamente.")
-            except Exception as e:
-                st.error(f"Error al guardar: {str(e)}")
+# --- MÓDULO 2: DASHBOARD ---
+elif opcion == "📊 Dashboard y Reportes":
+    st.header("Métricas y Exportación")
+    df = db.obtener_todo()
 
-# ==================== 2. ASIGNACIÓN DE TAREAS ====================
-elif menu == "🎯 Asignación de Tareas":
-    st.markdown('<div class="main-header">CONTROL DE ASIGNACIONES</div>', unsafe_allow_html=True)
-    
-    cur = get_cursor(dictionary=True)
-    cur.execute("SELECT unit_number FROM unidades WHERE vin_number IS NOT NULL")
-    u_data = pd.DataFrame(cur.fetchall())
-    cur.execute("SELECT nombre FROM actividades")
-    act_data = pd.DataFrame(cur.fetchall())
-    cur.execute("SELECT username FROM users WHERE role='tecnico'")
-    tec_data = pd.DataFrame(cur.fetchall())
-    cur.close()
-
-    col1, col2, col3 = st.columns(3)
-    with col1: 
-        u_sel = st.selectbox("Unidad", u_data["unit_number"] if not u_data.empty else [])
-    with col2: 
-        tec_sel = st.selectbox("Técnico", tec_data["username"] if not tec_data.empty else [])
-    with col3: 
-        act_sel = st.selectbox("Actividad", act_data["nombre"] if not act_data.empty else ["Cableado", "Inspeccion"])
-
-    if st.button("📌 Crear Tarea"):
-        if u_sel and tec_sel and act_sel:
-            try:
-                cur = get_cursor()
-                cur.execute("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_sel, act_sel, tec_sel))
-                cur.close()
-                st.success("✅ Tarea asignada exitosamente.")
-            except Exception as e:
-                st.error(f"Error al asignar: {e}")
-
-# ==================== 3. DASHBOARD OPERATIVO (CORREGIDO) ====================
-elif menu == "📊 Dashboard Operativo":
-    st.markdown('<div class="main-header">DASHBOARD ESTRATÉGICO DE PRODUCCIÓN</div>', unsafe_allow_html=True)
-    
-    try:
-        cur = get_cursor(dictionary=True)
+    if not df.empty:
+        # Fila de Métricas
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Registros", len(df))
+        m2.metric("Lotes Activos", df['lote'].nunique())
+        m3.metric("Series Hoy", len(df[df['fecha_registro'].dt.date == datetime.now().date()]))
         
-        # Producción General
-        cur.execute("SELECT COUNT(DISTINCT unit_number) as total FROM unidades")
-        prod_total = cur.fetchone()['total'] or 0
+        # Exportación del Dashboard
+        resumen = df.groupby('lote').size().reset_index(name='Cantidad')
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            resumen.to_excel(writer, sheet_name='Resumen_Lotes', index=False)
+            df.to_excel(writer, sheet_name='Detalle_Series', index=False)
         
-        # Productividad por Técnico
-        cur.execute("""
-            SELECT tecnico, COUNT(*) as cantidad 
-            FROM asignaciones WHERE estado='completada' GROUP BY tecnico
-        """)
-        df_tec = pd.DataFrame(cur.fetchall())
-        
-        # Consulta segura para lotes (evita el error de columna lote_id)
-        try:
-            cur.execute("""
-                SELECT 
-                    COALESCE(lote_id, 'Sin Lote') as lote_id, 
-                    COUNT(unit_number) as total_u, 
-                    SUM(CASE WHEN vin_number IS NOT NULL AND reefer IS NOT NULL THEN 1 ELSE 0 END) as completas
-                FROM unidades 
-                GROUP BY lote_id
-            """)
-            df_lotes = pd.DataFrame(cur.fetchall())
-        except:
-            # Versión alternativa sin lote_id
-            cur.execute("""
-                SELECT 
-                    'General' as lote_id, 
-                    COUNT(unit_number) as total_u, 
-                    SUM(CASE WHEN vin_number IS NOT NULL AND reefer IS NOT NULL THEN 1 ELSE 0 END) as completas
-                FROM unidades
-            """)
-            df_lotes = pd.DataFrame(cur.fetchall())
-        
-        cur.close()
+        m4.download_button(
+            label="📥 Exportar Excel",
+            data=output.getvalue(),
+            file_name=f"reporte_refrigeracion_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-    except Exception as e:
-        st.error(f"Error al cargar dashboard: {str(e)}")
-        prod_total = 0
-        df_tec = pd.DataFrame()
-        df_lotes = pd.DataFrame()
-
-    # --- KPIs ---
-    kpi1, kpi2, kpi3 = st.columns(3)
-    with kpi1:
-        st.markdown(f'<div class="metric-card"><h3>Producción Total</h3><h2>{prod_total}</h2><p>Unidades Únicas</p></div>', unsafe_allow_html=True)
-    with kpi2:
-        lotes_activos = len(df_lotes) if not df_lotes.empty else 0
-        st.markdown(f'<div class="metric-card"><h3>Lotes Activos</h3><h2>{lotes_activos}</h2><p>En operación</p></div>', unsafe_allow_html=True)
-    with kpi3:
-        tareas_hoy = int(df_tec['cantidad'].sum()) if not df_tec.empty else 0
-        st.markdown(f'<div class="metric-card"><h3>Tareas Listas</h3><h2>{tareas_hoy}</h2><p>Productividad Total</p></div>', unsafe_allow_html=True)
-
-    st.divider()
-
-    # --- Gráficos ---
-    c_left, c_right = st.columns([1, 1])
-    with c_left:
-        st.subheader("👨‍🔧 Productividad Individual")
-        if not df_tec.empty:
-            fig_tec = px.bar(df_tec, x='tecnico', y='cantidad', color='cantidad', 
-                             color_continuous_scale='Blues', labels={'cantidad':'Tareas Finalizadas'})
-            st.plotly_chart(fig_tec, use_container_width=True)
-        else:
-            st.info("No hay tareas completadas aún.")
-
-    with c_right:
-        st.subheader("📦 Avance por Lote")
-        if not df_lotes.empty:
-            fig_lote = px.pie(df_lotes, names='lote_id', values='total_u', hole=0.4, title="Distribución de Unidades")
-            st.plotly_chart(fig_lote, use_container_width=True)
-        else:
-            st.info("No hay datos de lotes.")
-
-    # --- Detalle por Lote ---
-    st.divider()
-    st.subheader("🔍 Explorador de Estatus por Lote")
-    if not df_lotes.empty:
-        lote_sel = st.selectbox("Seleccione un Lote para auditar", df_lotes['lote_id'].unique())
-        
-        cur = get_cursor(dictionary=True)
-        cur.execute("SELECT unit_number, vin_number, reefer, engine_serial FROM unidades LIMIT 100")
-        detalle = pd.DataFrame(cur.fetchall())
-        cur.close()
-        
-        st.dataframe(detalle, use_container_width=True)
-
-    # ==================== REPORTES SOLO PARA ADMIN ====================
-    if st.session_state.get("role", "").upper() == "ADMIN":
         st.divider()
-        st.subheader("📄 Reportes y Exportaciones Finales (Solo Administrador)")
         
-        col_rep1, col_rep2 = st.columns(2)
-        with col_rep1:
-            if st.button("📥 Exportar Todo a Excel", use_container_width=True):
-                try:
-                    cur = get_cursor(dictionary=True)
-                    cur.execute("SELECT * FROM unidades")
-                    df_unidades = pd.DataFrame(cur.fetchall())
-                    cur.execute("SELECT * FROM asignaciones")
-                    df_asignaciones = pd.DataFrame(cur.fetchall())
-                    cur.close()
+        c_izq, c_der = st.columns(2)
+        with c_izq:
+            st.subheader("Producción por Lote")
+            st.bar_chart(resumen.set_index('lote'))
+        
+        with c_der:
+            st.subheader("Últimos Movimientos")
+            st.dataframe(df[['lote', 'unidad', 'serie']].head(10), use_container_width=True)
+    else:
+        st.warning("No hay datos para mostrar el dashboard.")
 
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    excel_file = f"Reporte_Carrier_Completo_{timestamp}.xlsx"
-                    
-                    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-                        df_unidades.to_excel(writer, sheet_name='Unidades', index=False)
-                        df_asignaciones.to_excel(writer, sheet_name='Asignaciones', index=False)
-                    
-                    with open(excel_file, "rb") as f:
-                        st.download_button(
-                            label="⬇️ Descargar Reporte Excel",
-                            data=f,
-                            file_name=excel_file,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    st.success("✅ Reporte Excel generado correctamente")
-                except Exception as e:
-                    st.error(f"Error al generar Excel: {e}")
+# --- MÓDULO 3: HISTÓRICO ---
+elif opcion == "🗄️ Histórico Completo":
+    st.header("Administración de Datos")
+    df = db.obtener_todo()
+    
+    filtro = st.text_input("🔍 Buscar por Serie o Lote")
+    if filtro:
+        df = df[df.astype(str).apply(lambda x: x.str.contains(filtro, case=False)).any(axis=1)]
 
-        with col_rep2:
-            st.info("🔜 Exportación a PDF estará disponible pronto")
+    st.dataframe(df, use_container_width=True)
+    
+    if st.button("🗑️ Limpiar filtros"):
+        st.rerun()

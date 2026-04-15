@@ -4,6 +4,7 @@ import mysql.connector
 import plotly.express as px
 from datetime import datetime
 import io
+import time
 
 # ==================== CONFIGURACIÓN ====================
 st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout="wide")
@@ -19,7 +20,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== CONEXIÓN A DB ====================
+# ==================== CONEXIÓN ====================
 @st.cache_resource(show_spinner=False, ttl=300)
 def get_db():
     try:
@@ -77,23 +78,22 @@ with st.sidebar:
     if st.session_state.role.upper() == "ADMIN":
         menu = st.radio("Menú Principal", ["📸 Registro de Unidades", "🎯 Asignación de Tareas", "📊 Dashboard Operativo"])
     else:
-        menu = "🎯 Mis Tareas"  # Técnicos solo ven sus tareas
+        menu = "🎯 Mis Tareas"
     
     if st.button("🔄 Resetear Aplicación", use_container_width=True):
         for key in list(st.session_state.keys()):
             if key not in ["login", "user", "role"]:
                 del st.session_state[key]
-        st.success("✅ Aplicación reseteada correctamente")
+        st.success("✅ Aplicación reseteada")
         st.rerun()
         
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
-# ==================== 1. REGISTRO DE UNIDADES (Solo Admin) ====================
+# ==================== 1. REGISTRO (Solo Admin) ====================
 if menu == "📸 Registro de Unidades" and st.session_state.role.upper() == "ADMIN":
     st.markdown('<div class="main-header">REGISTRO DE SERIES Y COMPONENTES</div>', unsafe_allow_html=True)
-    
     col1, col2 = st.columns(2)
     with col1:
         tipo = st.radio("Modo", ["Existente", "Nueva Unidad"], key="tipo_reg")
@@ -106,7 +106,6 @@ if menu == "📸 Registro de Unidades" and st.session_state.role.upper() == "ADM
             u_db = pd.DataFrame(cur.fetchall())
             cur.close()
             u_num = st.selectbox("Seleccione Unidad", u_db["unit_number"] if not u_db.empty else ["No hay datos"], key="select_unidad")
-
     with col2:
         campo = st.selectbox("Componente", ["vin_number", "reefer", "engine_serial", "compressor_serial"], key="campo_sel")
         valor = st.text_input("Valor de Serie", key="valor_ser")
@@ -126,10 +125,9 @@ if menu == "📸 Registro de Unidades" and st.session_state.role.upper() == "ADM
             except Exception as e:
                 st.error(f"Error al guardar: {str(e)}")
 
-# ==================== 2. ASIGNACIÓN DE TAREAS (Solo Admin) ====================
+# ==================== 2. ASIGNACIÓN (Solo Admin) ====================
 elif menu == "🎯 Asignación de Tareas" and st.session_state.role.upper() == "ADMIN":
     st.markdown('<div class="main-header">CONTROL DE ASIGNACIONES</div>', unsafe_allow_html=True)
-    
     cur = get_cursor(dictionary=True)
     cur.execute("SELECT unit_number FROM unidades WHERE vin_number IS NOT NULL")
     u_data = pd.DataFrame(cur.fetchall())
@@ -148,14 +146,13 @@ elif menu == "🎯 Asignación de Tareas" and st.session_state.role.upper() == "
         if u_sel and tec_sel and act_sel:
             try:
                 cur = get_cursor()
-                cur.execute("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", 
-                           (u_sel, act_sel, tec_sel))
+                cur.execute("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_sel, act_sel, tec_sel))
                 cur.close()
                 st.success("✅ Tarea asignada exitosamente.")
             except Exception as e:
                 st.error(f"Error al asignar: {e}")
 
-# ==================== 3. MIS TAREAS (Para Técnicos) ====================
+# ==================== 3. MIS TAREAS (Técnicos) - CON LIMITACIÓN ====================
 elif menu == "🎯 Mis Tareas" or st.session_state.role.upper() != "ADMIN":
     st.markdown('<div class="main-header">MIS TAREAS ASIGNADAS</div>', unsafe_allow_html=True)
     
@@ -170,38 +167,50 @@ elif menu == "🎯 Mis Tareas" or st.session_state.role.upper() != "ADMIN":
     cur.close()
 
     if df_tareas.empty:
-        st.info("No tienes tareas asignadas en este momento.")
+        st.info("No tienes tareas asignadas.")
     else:
         st.dataframe(df_tareas, use_container_width=True)
         
-        tarea_id = st.selectbox("Selecciona una tarea para actualizar", df_tareas['id'].tolist())
+        tarea_id = st.selectbox("Selecciona tarea", df_tareas['id'].tolist())
+        tarea = df_tareas[df_tareas['id'] == tarea_id].iloc[0]
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("▶️ Iniciar Tarea", use_container_width=True):
-                cur = get_cursor()
-                cur.execute("UPDATE asignaciones SET fecha_inicio = NOW(), estado='en_proceso' WHERE id = %s", (tarea_id,))
-                cur.close()
-                st.success("✅ Tarea iniciada")
-                st.rerun()
+            if tarea['estado'] == 'pendiente':
+                if st.button("▶️ Iniciar Tarea", use_container_width=True):
+                    cur = get_cursor()
+                    cur.execute("UPDATE asignaciones SET fecha_inicio=NOW(), estado='en_proceso' WHERE id=%s", (tarea_id,))
+                    cur.close()
+                    st.success("✅ Tarea iniciada")
+                    st.rerun()
+            else:
+                st.button("▶️ Iniciar Tarea", disabled=True, use_container_width=True)
+        
         with col2:
-            if st.button("✅ Finalizar Tarea", use_container_width=True):
-                cur = get_cursor()
-                cur.execute("""
-                    UPDATE asignaciones 
-                    SET fecha_fin = NOW(), 
-                        estado = 'completada',
-                        tiempo_minutos = TIMESTAMPDIFF(MINUTE, fecha_inicio, NOW())
-                    WHERE id = %s AND fecha_inicio IS NOT NULL
-                """, (tarea_id,))
-                cur.close()
-                st.success("✅ Tarea finalizada y tiempo registrado")
-                st.rerun()
+            if tarea['estado'] == 'en_proceso':
+                if st.button("✅ Finalizar Tarea", use_container_width=True):
+                    cur = get_cursor()
+                    cur.execute("""
+                        UPDATE asignaciones 
+                        SET fecha_fin=NOW(), estado='completada',
+                        tiempo_minutos=TIMESTAMPDIFF(MINUTE, fecha_inicio, NOW())
+                        WHERE id=%s
+                    """, (tarea_id,))
+                    cur.close()
+                    st.success("✅ Tarea finalizada y tiempo registrado")
+                    st.rerun()
+            else:
+                st.button("✅ Finalizar Tarea", disabled=True, use_container_width=True)
 
-# ==================== 4. DASHBOARD (Solo Admin) ====================
+# ==================== 4. DASHBOARD (Solo Admin) - CON AUTO-REFRESH CADA 60 SEGUNDOS ====================
 elif menu == "📊 Dashboard Operativo" and st.session_state.role.upper() == "ADMIN":
     st.markdown('<div class="main-header">DASHBOARD ESTRATÉGICO DE PRODUCCIÓN</div>', unsafe_allow_html=True)
     
+    # Auto-refresh cada 60 segundos
+    st.info("🔄 Dashboard se actualizará automáticamente cada 60 segundos...")
+    placeholder = st.empty()
+    
+    # Datos del dashboard
     try:
         cur = get_cursor(dictionary=True)
         cur.execute("SELECT COUNT(DISTINCT unit_number) as total FROM unidades")
@@ -210,8 +219,7 @@ elif menu == "📊 Dashboard Operativo" and st.session_state.role.upper() == "AD
         cur.execute("SELECT COUNT(*) as completas FROM unidades WHERE vin_number IS NOT NULL AND reefer IS NOT NULL")
         completas = cur.fetchone()['completas'] or 0
         
-        cur.execute("""SELECT tecnico, COUNT(*) as tareas, 
-                       SUM(tiempo_minutos) as total_minutos 
+        cur.execute("""SELECT tecnico, COUNT(*) as tareas, SUM(tiempo_minutos) as total_minutos 
                        FROM asignaciones WHERE estado='completada' GROUP BY tecnico""")
         df_prod = pd.DataFrame(cur.fetchall())
         
@@ -222,6 +230,7 @@ elif menu == "📊 Dashboard Operativo" and st.session_state.role.upper() == "AD
         avance = round((completas / total_unidades * 100), 1) if total_unidades > 0 else 0
     except:
         total_unidades = completas = pendientes = 0
+        avance = 0
         df_prod = pd.DataFrame()
 
     # KPIs
@@ -232,24 +241,57 @@ elif menu == "📊 Dashboard Operativo" and st.session_state.role.upper() == "AD
         st.markdown(f'<div class="metric-card"><h3>Unidades Completas</h3><h2>{completas}</h2><p>VIN + Reefer</p></div>', unsafe_allow_html=True)
     with k3:
         st.markdown(f'<div class="metric-card"><h3>Avance General</h3><h2>{avance}%</h2><p>Progreso</p></div>', unsafe_allow_html=True)
-        st.progress(avance/100)
+        st.progress(avance / 100)
     with k4:
         st.markdown(f'<div class="metric-card"><h3>Tareas Pendientes</h3><h2>{pendientes}</h2><p>Por completar</p></div>', unsafe_allow_html=True)
 
     st.divider()
 
-    col1, col2 = st.columns([1,1])
+    col1, col2 = st.columns([1, 1])
     with col1:
-        st.subheader("Productividad por Técnico")
+        st.subheader("👨‍🔧 Productividad por Técnico")
         if not df_prod.empty:
             fig = px.bar(df_prod, x='tecnico', y='tareas', color='tareas', color_continuous_scale='Blues')
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(df_prod, use_container_width=True)
 
     st.divider()
-    st.subheader("Lista Completa de Unidades Registradas")
+    st.subheader("📋 Lista Completa de Unidades Registradas")
     cur = get_cursor(dictionary=True)
     cur.execute("SELECT * FROM unidades ORDER BY unit_number")
     df_unidades = pd.DataFrame(cur.fetchall())
     cur.close()
     st.dataframe(df_unidades, use_container_width=True)
+
+    # Exportación Excel
+    st.divider()
+    st.subheader("📄 Reportes (Solo Admin)")
+    if st.button("📥 Exportar Todo a Excel", use_container_width=True):
+        try:
+            cur = get_cursor(dictionary=True)
+            cur.execute("SELECT * FROM unidades")
+            df_u = pd.DataFrame(cur.fetchall())
+            cur.execute("SELECT * FROM asignaciones")
+            df_a = pd.DataFrame(cur.fetchall())
+            cur.close()
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_u.to_excel(writer, sheet_name='Unidades', index=False)
+                df_a.to_excel(writer, sheet_name='Asignaciones', index=False)
+            output.seek(0)
+
+            st.download_button(
+                label="⬇️ Descargar Reporte Excel",
+                data=output,
+                file_name=f"Reporte_Carrier_{timestamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            st.success("✅ Reporte generado correctamente")
+        except Exception as e:
+            st.error(f"Error al generar Excel: {str(e)}")
+
+    # Auto-refresh cada 60 segundos
+    time.sleep(60)
+    st.rerun()

@@ -34,7 +34,6 @@ st.markdown(f"""
 <style>
     .main-header {{ font-size: 2.3rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
     .stButton>button {{ width: 100%; border-radius: 5px; height: 3em; background-color: {CARRIER_BLUE}; color: white; }}
-    .delete-btn>button {{ background-color: #FF4B4B !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -135,7 +134,6 @@ elif menu == "🎯 Asignación":
         st.success("Tarea asignada")
 
     st.divider()
-    # --- NUEVA SECCIÓN: ELIMINAR/DESASIGNAR ---
     st.subheader("🗑️ Gestionar Asignaciones Activas")
     asig_activas = execute_read("SELECT id, unidad, actividad_id, tecnico, estado FROM asignaciones WHERE estado != 'completada'")
     if asig_activas:
@@ -144,10 +142,7 @@ elif menu == "🎯 Asignación":
             col_info.write(f"**Unidad:** {a['unidad']} | **Actividad:** {a['actividad_id']} | **Técnico:** {a['tecnico']} ({a['estado']})")
             if col_btn.button("Eliminar", key=f"del_{a['id']}"):
                 execute_write("DELETE FROM asignaciones WHERE id = %s", (a['id'],))
-                st.toast(f"Asignación {a['id']} eliminada")
                 st.rerun()
-    else:
-        st.info("No hay asignaciones pendientes o en proceso para eliminar.")
 
 elif menu == "🎯 Mis Tareas":
     st.subheader(f"Tareas de {st.session_state.user}")
@@ -176,46 +171,55 @@ elif menu == "🎯 Mis Tareas":
     st.rerun()
 
 elif menu == "📊 Dashboard":
-    st.subheader("Dashboard de Control y Métricas")
-    res = execute_read("SELECT u.*, a.tecnico, a.actividad_id, a.estado FROM unidades u LEFT JOIN asignaciones a ON u.unit_number = a.unidad")
+    st.subheader("Dashboard de Control Carrier")
     
-    if res:
-        df = pd.DataFrame(res)
-        
-        # --- MÉTRICAS NUMÉRICAS POR TÉCNICO ---
-        st.markdown("### 📈 Resumen Numérico por Técnico")
-        df_stats = df.dropna(subset=['tecnico'])
-        if not df_stats.empty:
-            pivot_stats = df_stats.pivot_table(index='tecnico', columns='estado', values='unit_number', aggfunc='count', fill_value=0).reset_index()
-            for col in ['pendiente', 'en_proceso', 'completada']:
-                if col not in pivot_stats.columns: pivot_stats[col] = 0
-            
-            pivot_stats['Total'] = pivot_stats['pendiente'] + pivot_stats['en_proceso'] + pivot_stats['completada']
-            st.dataframe(pivot_stats.rename(columns={'tecnico': 'Técnico', 'pendiente': 'Pendientes 🟡', 'en_proceso': 'En Proceso 🔵', 'completada': 'Completadas ✅'}), use_container_width=True, hide_index=True)
+    # 1. Obtener Datos de Unidades (Series Técnicas) - SIN DUPLICADOS
+    unidades_raw = execute_read("SELECT * FROM unidades")
+    df_unidades = pd.DataFrame(unidades_raw) if unidades_raw else pd.DataFrame()
 
-        # --- GRÁFICAS ---
+    # 2. Obtener Datos de Asignaciones (Gestión de Tareas)
+    asig_raw = execute_read("SELECT * FROM asignaciones")
+    df_asig = pd.DataFrame(asig_raw) if asig_raw else pd.DataFrame()
+
+    # --- MÉTRICAS NUMÉRICAS POR TÉCNICO (Basado solo en asignaciones) ---
+    if not df_asig.empty:
+        st.markdown("### 📈 Resumen de Productividad por Técnico")
+        pivot_stats = df_asig.pivot_table(index='tecnico', columns='estado', values='id', aggfunc='count', fill_value=0).reset_index()
+        for col in ['pendiente', 'en_proceso', 'completada']:
+            if col not in pivot_stats.columns: pivot_stats[col] = 0
+        
+        pivot_stats['Total'] = pivot_stats['pendiente'] + pivot_stats['en_proceso'] + pivot_stats['completada']
+        st.dataframe(pivot_stats.rename(columns={'tecnico': 'Técnico', 'pendiente': 'Pendientes 🟡', 'en_proceso': 'En Proceso 🔵', 'completada': 'Completadas ✅'}), use_container_width=True, hide_index=True)
+
         c1, c2 = st.columns(2)
         with c1:
-            if not df_stats.empty:
-                fig_prod = px.bar(df_stats, x='tecnico', color='estado', title="Carga por Técnico", barmode='group')
-                st.plotly_chart(fig_prod, use_container_width=True)
+            fig_prod = px.bar(df_asig, x='tecnico', color='estado', title="Carga Visual por Técnico", barmode='group')
+            st.plotly_chart(fig_prod, use_container_width=True)
         with c2:
-            st.plotly_chart(px.pie(df, names='estado', title="Estado Global"), use_container_width=True)
+            st.plotly_chart(px.pie(df_asig, names='estado', title="Estado Global de Tareas"), use_container_width=True)
 
-        # --- VISTA POR LOTES ---
-        st.write("### 🏗️ Jerarquía por Lotes")
-        for lote in df['id_lote'].unique():
-            with st.expander(f"LOTE: {lote}"):
-                st.table(df[df['id_lote']==lote][['unit_number', 'tecnico', 'actividad_id', 'estado']])
+    # --- DESGLOSE DE REGISTRO DE SERIES (RESTAURADO) ---
+    st.markdown("### 📋 Desglose de Registro de Series")
+    if not df_unidades.empty:
+        # Mostramos la tabla técnica pura
+        st.dataframe(df_unidades, use_container_width=True, hide_index=True)
         
-        # --- EXPORTACIÓN ---
+        # Vista por lotes simplificada (solo unidades técnicas)
+        st.write("### 🏗️ Unidades por Lote")
+        for lote in df_unidades['id_lote'].unique():
+            with st.expander(f"LOTE: {lote}"):
+                st.table(df_unidades[df_unidades['id_lote']==lote][['unit_number'] + list(CAMPOS_SERIES.keys())])
+    else:
+        st.info("No hay unidades registradas.")
+
+    # --- EXPORTACIÓN ---
+    if not df_unidades.empty or not df_asig.empty:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Desglose_General')
-            if not df_stats.empty:
-                pivot_stats.to_excel(writer, index=False, sheet_name='Metricas_Tecnicos')
+            if not df_unidades.empty: df_unidades.to_excel(writer, index=False, sheet_name='Series_Tecnicas')
+            if not df_asig.empty: df_asig.to_excel(writer, index=False, sheet_name='Estado_Tareas')
         
-        st.download_button("📥 Descargar Reporte (Excel)", buffer.getvalue(), f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx")
+        st.download_button("📥 Descargar Reporte Completo (Excel)", buffer.getvalue(), f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx")
     
     time.sleep(60)
     st.rerun()

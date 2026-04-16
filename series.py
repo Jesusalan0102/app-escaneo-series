@@ -12,7 +12,6 @@ st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
-# 9 Campos de Series Técnicas
 CAMPOS_SERIES = {
     "vin_number": "VIN NUMBER",
     "reefer_serial": "REEFER SERIAL",
@@ -25,7 +24,6 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "BATTERY CHARGER"
 }
 
-# 13 Actividades exactas de la imagen bfe824.png
 ACTIVIDADES_CARRIER = [
     "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
     "Programación", "Soldadura en sitio", "Vacios", "Accesorios", 
@@ -36,6 +34,7 @@ st.markdown(f"""
 <style>
     .main-header {{ font-size: 2.3rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
     .stButton>button {{ width: 100%; border-radius: 5px; height: 3em; background-color: {CARRIER_BLUE}; color: white; }}
+    .delete-btn>button {{ background-color: #FF4B4B !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -63,7 +62,7 @@ def execute_write(query, params=None):
         cur.close()
         conn.close()
 
-# ==================== LOGIN (CASE INSENSITIVE) ====================
+# ==================== LOGIN ====================
 if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
 
@@ -121,22 +120,39 @@ elif menu == "📸 Registro":
         st.success("Información registrada.")
 
 elif menu == "🎯 Asignación":
-    st.subheader("Asignar Actividad")
+    st.subheader("Nueva Asignación")
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
     t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
+    
     c1, c2, c3 = st.columns(3)
     u_list = [f"{x['id_lote']} - {x['unit_number']}" for x in u_db] if u_db else []
     u_s = c1.selectbox("Unidad", u_list)
     t_s = c2.selectbox("Técnico", [x['username'] for x in t_db] if t_db else [])
     a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
+    
     if st.button("📌 Asignar"):
         execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_s.split(" - ")[1], a_s, t_s))
         st.success("Tarea asignada")
 
+    st.divider()
+    # --- NUEVA SECCIÓN: ELIMINAR/DESASIGNAR ---
+    st.subheader("🗑️ Gestionar Asignaciones Activas")
+    asig_activas = execute_read("SELECT id, unidad, actividad_id, tecnico, estado FROM asignaciones WHERE estado != 'completada'")
+    if asig_activas:
+        for a in asig_activas:
+            col_info, col_btn = st.columns([4, 1])
+            col_info.write(f"**Unidad:** {a['unidad']} | **Actividad:** {a['actividad_id']} | **Técnico:** {a['tecnico']} ({a['estado']})")
+            if col_btn.button("Eliminar", key=f"del_{a['id']}"):
+                execute_write("DELETE FROM asignaciones WHERE id = %s", (a['id'],))
+                st.toast(f"Asignación {a['id']} eliminada")
+                st.rerun()
+    else:
+        st.info("No hay asignaciones pendientes o en proceso para eliminar.")
+
 elif menu == "🎯 Mis Tareas":
     st.subheader(f"Tareas de {st.session_state.user}")
     mis_t = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-    if not mis_t: st.write("Sin tareas.")
+    if not mis_t: st.write("Sin tareas pendientes.")
     else:
         for t in mis_t:
             with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}"):
@@ -192,14 +208,14 @@ elif menu == "📊 Dashboard":
             with st.expander(f"LOTE: {lote}"):
                 st.table(df[df['id_lote']==lote][['unit_number', 'tecnico', 'actividad_id', 'estado']])
         
-        # --- EXPORTACIÓN GENERAL ---
+        # --- EXPORTACIÓN ---
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Desglose_General')
             if not df_stats.empty:
                 pivot_stats.to_excel(writer, index=False, sheet_name='Metricas_Tecnicos')
         
-        st.download_button("📥 Descargar Reporte y Métricas (Excel)", buffer.getvalue(), f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx")
+        st.download_button("📥 Descargar Reporte (Excel)", buffer.getvalue(), f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx")
     
     time.sleep(60)
     st.rerun()

@@ -12,6 +12,7 @@ st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
+# Campos según imagen técnica
 CAMPOS_UNIDAD = {
     "vin_number": "VIN NUMBER",
     "reefer_serial": "REEFER SERIAL",
@@ -21,7 +22,7 @@ CAMPOS_UNIDAD = {
     "engine_serial": "ENGINE SERIAL",
     "compressor_serial": "COMPRESSOR SERIAL",
     "generator_serial": "GENERATOR SERIAL",
-    "battery_charger_serial": "BATTERY CHARGER SERIAL"
+    "battery_charger_serial": "BATTERY charger SERIAL"
 }
 
 ID_ACTIVIDAD_SERIES = "Toma de Series"
@@ -35,7 +36,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== GESTIÓN DE CONEXIÓN (ANTI-ERROR 1226) ====================
+# ==================== CONEXIÓN SEGURA (ANTI-ERROR 1226) ====================
 def get_db_connection():
     return mysql.connector.connect(
         host=st.secrets["db"]["host"],
@@ -66,6 +67,17 @@ def execute_write(query, params=None):
         cur.close()
         conn.close()
 
+# --- VALIDACIÓN DE COLUMNAS (Para evitar el ProgrammingError) ---
+def check_db_schema():
+    columns = [x['Field'] for x in execute_read("DESCRIBE unidades")]
+    if 'id_lote' not in columns:
+        execute_write("ALTER TABLE unidades ADD COLUMN id_lote VARCHAR(100) AFTER unit_number")
+
+try:
+    check_db_schema()
+except:
+    pass
+
 # ==================== LOGIN ====================
 if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
@@ -80,7 +92,7 @@ if not st.session_state.login:
             st.session_state.update({"login": True, "user": u, "role": user[0]['role']})
             st.rerun()
         else:
-            st.error("Credenciales incorrectas")
+            st.error("Usuario o contraseña incorrectos")
     st.stop()
 
 # ==================== SIDEBAR ====================
@@ -95,14 +107,14 @@ with st.sidebar:
     if is_admin:
         menu = st.radio("Menú Principal", ["📸 Registro de Unidades", "🎯 Asignación de Tareas", "📊 Dashboard Operativo"])
         
-        # --- BOTÓN RESET (SOLO ADMIN Y NO BORRA USER/LOGIN) ---
+        # --- BOTÓN RESET (SOLO ADMIN) ---
         st.divider()
         if st.button("🔄 Resetear Campos de Datos", use_container_width=True):
             keep = ["login", "user", "role"]
             for key in list(st.session_state.keys()):
                 if key not in keep:
                     del st.session_state[key]
-            st.success("Campos limpiados")
+            st.success("✅ Campos limpiados")
             time.sleep(0.5)
             st.rerun()
     else:
@@ -119,25 +131,26 @@ if menu == "📸 Registro de Unidades" and is_admin:
     
     col1, col2 = st.columns(2)
     with col1:
-        tipo = st.radio("Modo", ["Existente", "Nueva Unidad"], key="modo_reg")
+        tipo = st.radio("Modo", ["Existente", "Nueva Unidad"], key="modo_admin")
         if tipo == "Nueva Unidad":
-            u_num = st.text_input("Escriba Unit Number", key="new_u")
-            lote_input = st.text_input("ID de Lote (Opcional)", key="new_l")
+            u_num = st.text_input("Escriba Unit Number", key="u_new")
+            lote_input = st.text_input("ID de Lote (Opcional)", key="l_new")
         else:
             u_db = execute_read("SELECT unit_number FROM unidades")
-            u_num = st.selectbox("Seleccione Unidad", [x['unit_number'] for x in u_db] if u_db else [], key="sel_u")
+            u_num = st.selectbox("Seleccione Unidad", [x['unit_number'] for x in u_db] if u_db else [], key="u_sel")
+            lote_input = ""
             
     with col2:
-        campo_db = st.selectbox("Componente", list(CAMPOS_UNIDAD.keys()), format_func=lambda x: CAMPOS_UNIDAD[x], key="sel_c")
-        valor = st.text_input("Valor de Serie", key="val_s")
+        campo_db = st.selectbox("Componente", list(CAMPOS_UNIDAD.keys()), format_func=lambda x: CAMPOS_UNIDAD[x], key="c_sel")
+        valor = st.text_input("Valor de Serie", key="v_ser")
 
     if st.button("💾 Guardar Registro"):
         if u_num and valor:
             if tipo == "Nueva Unidad":
-                execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo_db}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE {campo_db}=%s", (u_num, lote_input, valor, valor))
+                execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo_db}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo_db}=%s", (u_num, lote_input, valor, lote_input, valor))
             else:
                 execute_write(f"UPDATE unidades SET {campo_db}=%s WHERE unit_number=%s", (valor, u_num))
-            st.success("✅ Registro guardado")
+            st.success(f"✅ Unidad {u_num} actualizada.")
 
 # ==================== 2. ASIGNACIÓN (Solo Admin) ====================
 elif menu == "🎯 Asignación de Tareas" and is_admin:
@@ -148,22 +161,22 @@ elif menu == "🎯 Asignación de Tareas" and is_admin:
     tec_data = execute_read("SELECT username FROM users WHERE role='tecnico'")
 
     col1, col2, col3 = st.columns(3)
-    u_sel = col1.selectbox("Unidad", [x['unit_number'] for x in u_data] if u_data else [], key="asig_u")
-    tec_sel = col2.selectbox("Técnico", [x['username'] for x in tec_data] if tec_data else [], key="asig_t")
+    u_asig = col1.selectbox("Unidad", [x['unit_number'] for x in u_data] if u_data else [], key="as_u")
+    tec_asig = col2.selectbox("Técnico", [x['username'] for x in tec_data] if tec_data else [], key="as_t")
     
     acts = [x['nombre'] for x in act_data] if act_data else []
     if ID_ACTIVIDAD_SERIES not in acts: acts.append(ID_ACTIVIDAD_SERIES)
-    act_sel = col3.selectbox("Actividad", acts, key="asig_a")
+    act_asig = col3.selectbox("Actividad", acts, key="as_a")
 
     if st.button("📌 Crear Tarea"):
-        execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_sel, act_sel, tec_sel))
+        execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_asig, act_asig, tec_asig))
         st.success("✅ Tarea asignada exitosamente.")
 
 # ==================== 3. MIS TAREAS (Técnicos) ====================
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">MIS TAREAS ASIGNADAS</div>', unsafe_allow_html=True)
     
-    tareas = execute_read("SELECT * FROM asignaciones WHERE tecnico = %s AND estado != 'completada'", (st.session_state.user,))
+    tareas = execute_read("SELECT * FROM asignaciones WHERE tecnico = %s AND estado != 'completada' ORDER BY fecha_asignacion DESC", (st.session_state.user,))
 
     if not tareas:
         st.info("No tienes tareas asignadas.")
@@ -172,10 +185,8 @@ elif menu == "🎯 Mis Tareas":
         st.dataframe(df_tareas[['id', 'unidad', 'actividad_id', 'estado']], use_container_width=True, hide_index=True)
         
         st.divider()
-        tarea_id = st.selectbox("Seleccione tarea para gestionar", df_tareas['id'], key="gestion_id")
+        tarea_id = st.selectbox("Seleccione tarea para gestionar", df_tareas['id'], key="tec_sel_id")
         tarea = df_tareas[df_tareas['id'] == tarea_id].iloc[0]
-        
-        es_toma_series = tarea['actividad_id'] == ID_ACTIVIDAD_SERIES
         
         col1, col2 = st.columns(2)
         if tarea['estado'] == 'pendiente':
@@ -184,9 +195,9 @@ elif menu == "🎯 Mis Tareas":
                 st.rerun()
         
         elif tarea['estado'] == 'en_proceso':
-            if es_toma_series:
+            if tarea['actividad_id'] == ID_ACTIVIDAD_SERIES:
                 st.markdown('<div class="st-d5">📋 <b>FORMULARIO DE TOMA DE SERIES</b></div>', unsafe_allow_html=True)
-                with st.form("form_tec_series"):
+                with st.form("form_series_tec"):
                     inputs = {}
                     f1, f2 = st.columns(2)
                     for i, (k, v) in enumerate(CAMPOS_UNIDAD.items()):
@@ -194,10 +205,10 @@ elif menu == "🎯 Mis Tareas":
                             inputs[k] = st.text_input(v)
                     
                     if st.form_submit_button("✅ Guardar y Finalizar"):
-                        set_q = ", ".join([f"{k}=%s" for k in inputs.keys()])
-                        execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(inputs.values()) + [tarea['unidad']])
+                        set_clause = ", ".join([f"{k}=%s" for k in inputs.keys()])
+                        execute_write(f"UPDATE unidades SET {set_clause} WHERE unit_number=%s", list(inputs.values()) + [tarea['unidad']])
                         execute_write("UPDATE asignaciones SET fecha_fin=NOW(), estado='completada', tiempo_minutos=TIMESTAMPDIFF(MINUTE, fecha_inicio, NOW()) WHERE id=%s", (tarea_id,))
-                        st.success("✅ Datos guardados y tarea finalizada")
+                        st.success("✅ Datos guardados.")
                         time.sleep(1)
                         st.rerun()
             else:
@@ -207,7 +218,7 @@ elif menu == "🎯 Mis Tareas":
 
 # ==================== 4. DASHBOARD OPERATIVO ====================
 elif menu == "📊 Dashboard Operativo" and is_admin:
-    st.markdown('<div class="main-header">DASHBOARD ESTRATÉGICO DE PRODUCCIÓN</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">DASHBOARD DE PRODUCCIÓN</div>', unsafe_allow_html=True)
     
     u_raw = execute_read("SELECT * FROM unidades")
     a_raw = execute_read("SELECT * FROM asignaciones")
@@ -216,40 +227,23 @@ elif menu == "📊 Dashboard Operativo" and is_admin:
         df_u = pd.DataFrame(u_raw)
         df_a = pd.DataFrame(a_raw) if a_raw else pd.DataFrame()
         
-        # KPIs
-        total_u = len(df_u)
-        pendientes = len(df_a[df_a['estado'] == 'pendiente']) if not df_a.empty else 0
-        completas = len(df_u[df_u['vin_number'].notnull() & df_u['reefer_serial'].notnull()])
-        avance = round((completas/total_u*100),1) if total_u > 0 else 0
-
-        k1, k2, k3, k4 = st.columns(4)
-        k1.markdown(f'<div class="metric-card"><h3>Unidades</h3><h2>{total_u}</h2></div>', unsafe_allow_html=True)
-        k2.markdown(f'<div class="metric-card"><h3>Completas</h3><h2>{completas}</h2></div>', unsafe_allow_html=True)
-        k3.markdown(f'<div class="metric-card"><h3>Avance</h3><h2>{avance}%</h2></div>', unsafe_allow_html=True)
-        k4.markdown(f'<div class="metric-card"><h3>Pendientes</h3><h2>{pendientes}</h2></div>', unsafe_allow_html=True)
+        # KPIs Originales
+        t1, t2, t3 = st.columns(3)
+        t1.markdown(f'<div class="metric-card"><h3>Total Unidades</h3><h2>{len(df_u)}</h2></div>', unsafe_allow_html=True)
+        comp = len(df_u[df_u['vin_number'].notnull()])
+        t2.markdown(f'<div class="metric-card"><h3>Con VIN</h3><h2>{comp}</h2></div>', unsafe_allow_html=True)
+        t3.markdown(f'<div class="metric-card"><h3>Tareas Pendientes</h3><h2>{len(df_a[df_a["estado"]=="pendiente"]) if not df_a.empty else 0}</h2></div>', unsafe_allow_html=True)
 
         st.divider()
-        col_g1, col_g2 = st.columns(2)
-        
-        with col_g1:
-            st.subheader("👨‍🔧 Tareas por Técnico")
-            if not df_a.empty:
-                fig = px.bar(df_a[df_a['estado']=='completada'], x='tecnico', title="Productividad")
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col_g2:
-            st.subheader("📋 Inventario de Unidades")
-            st.dataframe(df_u, use_container_width=True)
+        st.subheader("📋 Lista Completa de Unidades")
+        st.dataframe(df_u, use_container_width=True)
 
         # Exportación
-        st.divider()
-        if st.button("📥 Exportar Reporte Excel"):
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_u.to_excel(writer, sheet_name='Unidades', index=False)
-                if not df_a.empty: df_a.to_excel(writer, sheet_name='Asignaciones', index=False)
-            st.download_button("Descargar", output.getvalue(), "Reporte_Carrier.xlsx")
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_u.to_excel(writer, sheet_name='Unidades', index=False)
+        st.download_button("📥 Descargar Excel", output.getvalue(), "Reporte_Carrier.xlsx")
 
-    # Auto-refresh
+    # Auto-refresh cada 60s
     time.sleep(60)
     st.rerun()

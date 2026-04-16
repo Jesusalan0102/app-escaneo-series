@@ -12,7 +12,6 @@ st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
-# Campos exactos de la imagen técnica para "toma de series"
 CAMPOS_SERIES = {
     "vin_number": "VIN NUMBER",
     "reefer_serial": "REEFER SERIAL",
@@ -25,7 +24,6 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "BATTERY CHARGER"
 }
 
-# Lista completa de actividades según imagen proporcionada
 ACTIVIDADES_CARRIER = [
     "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
     "Programación", "Soldadura en sitio", "Vacios", "Accesorios", 
@@ -37,18 +35,13 @@ st.markdown(f"""
     .main-header {{ font-size: 2.3rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
     .metric-card {{ background-color: #ffffff; padding: 20px; border-radius: 10px; border-left: 5px solid {CARRIER_BLUE}; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); }}
     .stButton>button {{ width: 100%; border-radius: 5px; height: 3em; background-color: {CARRIER_BLUE}; color: white; }}
-    .st-d5 {{ background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; margin-bottom: 10px; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== CONEXIÓN SEGURA ====================
+# ==================== CONEXIÓN ====================
 def get_db_connection():
     return mysql.connector.connect(
-        host=st.secrets["db"]["host"],
-        port=int(st.secrets["db"]["port"]),
-        user=st.secrets["db"]["user"],
-        password=st.secrets["db"]["password"],
-        database=st.secrets["db"]["database"],
+        **st.secrets["db"],
         autocommit=True
     )
 
@@ -99,7 +92,7 @@ with st.sidebar:
     if is_admin:
         menu = st.radio("Menú", ["📸 Registro", "🎯 Asignación", "📊 Dashboard", "👥 Usuarios"])
         st.divider()
-        if st.button("🗑️ ELIMINAR TODA LA DATA (Prod)"):
+        if st.button("🗑️ ELIMINAR TODA LA DATA"):
             execute_write("SET FOREIGN_KEY_CHECKS = 0")
             execute_write("TRUNCATE TABLE asignaciones")
             execute_write("TRUNCATE TABLE unidades")
@@ -113,89 +106,128 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# ==================== GESTIÓN USUARIOS ====================
+# ==================== SECCIONES ====================
+
 if menu == "👥 Usuarios" and is_admin:
     st.markdown('<div class="main-header">GESTIÓN DE USUARIOS</div>', unsafe_allow_html=True)
-    with st.form("nuevo_u"):
-        nu, np, nr = st.text_input("Usuario"), st.text_input("Contraseña", type="password"), st.selectbox("Rol", ["tecnico", "admin"])
-        if st.form_submit_button("Crear Usuario"):
-            execute_write("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (nu, np, nr))
-            st.success("Usuario creado")
+    t1, t2 = st.tabs(["➕ Crear", "🗑️ Eliminar"])
+    with t1:
+        with st.form("nuevo_u"):
+            nu, np, nr = st.text_input("Usuario"), st.text_input("Pass", type="password"), st.selectbox("Rol", ["tecnico", "admin"])
+            if st.form_submit_button("Crear"):
+                execute_write("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (nu, np, nr))
+                st.success("Creado")
+    with t2:
+        users = execute_read("SELECT username FROM users")
+        u_del = st.selectbox("Usuario a eliminar", [u['username'] for u in users])
+        if st.button("Eliminar"):
+            execute_write("DELETE FROM users WHERE username=%s", (u_del,))
+            st.rerun()
 
-# ==================== REGISTRO RÁPIDO ====================
 elif menu == "📸 Registro" and is_admin:
-    st.markdown('<div class="main-header">REGISTRO DE SERIES</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">REGISTRO DE UNIDADES</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         u_num = st.text_input("Unit Number")
         lote = st.text_input("Lote")
     with c2:
-        campo = st.selectbox("Componente", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
+        campo = st.selectbox("Campo", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
         valor = st.text_input("Valor")
-    
     if st.button("💾 Guardar"):
-        if u_num and lote:
-            execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
-            st.success("Registrado")
+        execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
+        st.success("Guardado")
 
-# ==================== ASIGNACIÓN (ACTIVIDADES RESTAURADAS) ====================
 elif menu == "🎯 Asignación" and is_admin:
     st.markdown('<div class="main-header">ASIGNAR TAREAS</div>', unsafe_allow_html=True)
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
     tec_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
-    
     c1, c2, c3 = st.columns(3)
     u_s = c1.selectbox("Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db] if u_db else [])
     t_s = c2.selectbox("Técnico", [x['username'] for x in tec_db] if tec_db else [])
     a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
-
     if st.button("📌 Asignar"):
         execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_s.split(" - ")[1], a_s, t_s))
         st.success("Tarea asignada")
 
-# ==================== MIS TAREAS (FORMULARIO 9 CAMPOS) ====================
 elif menu == "🎯 Mis Tareas":
     st.markdown(f'<div class="main-header">MIS TAREAS: {st.session_state.user.upper()}</div>', unsafe_allow_html=True)
-    tareas = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
+    st.info("🔄 Esta lista se actualiza automáticamente cada 60 segundos.")
     
-    if not tareas: st.info("Sin tareas pendientes")
+    tareas = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
+    if not tareas: 
+        st.info("Sin tareas pendientes")
     else:
         for t in tareas:
-            with st.expander(f"📦 Unidad: {t['unidad']} - {t['actividad_id']}"):
+            with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}"):
                 if t['estado'] == 'pendiente':
                     if st.button(f"Iniciar {t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=NOW() WHERE id=%s", (t['id'],))
                         st.rerun()
                 elif t['actividad_id'] == "toma de series":
-                    with st.form(f"form_{t['id']}"):
+                    with st.form(f"f_{t['id']}"):
                         res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                        if st.form_submit_button("Guardar y Finalizar"):
+                        if st.form_submit_button("Finalizar"):
                             sets = ", ".join([f"{k}=%s" for k in res.keys()])
                             execute_write(f"UPDATE unidades SET {sets} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
                             execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW(), tiempo_minutos=TIMESTAMPDIFF(MINUTE, fecha_inicio, NOW()) WHERE id=%s", (t['id'],))
                             st.rerun()
                 else:
-                    if st.button(f"Finalizar Tarea {t['id']}"):
+                    if st.button(f"Finalizar {t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW(), tiempo_minutos=TIMESTAMPDIFF(MINUTE, fecha_inicio, NOW()) WHERE id=%s", (t['id'],))
                         st.rerun()
 
-# ==================== DASHBOARD (JERARQUÍA POR LOTE) ====================
+    # AUTO-REFRESCO PARA TÉCNICOS
+    time.sleep(60)
+    st.rerun()
+
 elif menu == "📊 Dashboard" and is_admin:
-    st.markdown('<div class="main-header">DASHBOARD POR LOTES</div>', unsafe_allow_html=True)
-    data = execute_read("""
-        SELECT u.id_lote, u.unit_number, u.vin_number, a.tecnico, a.estado, a.actividad_id 
-        FROM unidades u LEFT JOIN asignaciones a ON u.unit_number = a.unidad
-    """)
+    st.markdown('<div class="main-header">DASHBOARD OPERATIVO</div>', unsafe_allow_html=True)
+    
+    # 1. Obtener Datos
+    data = execute_read("SELECT u.*, a.tecnico, a.estado, a.actividad_id FROM unidades u LEFT JOIN asignaciones a ON u.unit_number = a.unidad")
+    
     if data:
         df = pd.DataFrame(data)
-        c1, c2 = st.columns(2)
-        c1.plotly_chart(px.bar(df[df['estado']=='completada'], x='tecnico', title="Productividad"), use_container_width=True)
-        c2.plotly_chart(px.pie(df, names='estado', title="Estado Tareas"), use_container_width=True)
         
+        # 2. Gráficos de Productividad
+        c1, c2 = st.columns(2)
+        with c1:
+            df_prod = df[df['estado']=='completada'].groupby('tecnico').size().reset_index(name='Tareas')
+            st.plotly_chart(px.bar(df_prod, x='tecnico', y='Tareas', title="Tareas por Técnico"), use_container_width=True)
+        with c2:
+            st.plotly_chart(px.pie(df, names='estado', title="Estado General"), use_container_width=True)
+        
+        st.divider()
+        
+        # 3. Jerarquía por Lotes
+        st.subheader("🏗️ Control por Lotes")
         for lote in df['id_lote'].unique():
-            with st.expander(f"🏗️ LOTE: {lote}"):
-                # Se eliminó StatusColumn que causaba el error
+            with st.expander(f"LOTE: {lote}"):
                 st.dataframe(df[df['id_lote']==lote][['unit_number', 'vin_number', 'tecnico', 'actividad_id', 'estado']], use_container_width=True, hide_index=True)
-    
+        
+        st.divider()
+        
+        # 4. Registro al Momento (Información técnica completa)
+        st.subheader("📋 Registro de Unidades al Momento")
+        # Quitamos duplicados de unidades que puedan aparecer por tener múltiples tareas
+        df_unidades_clean = df.drop(columns=['tecnico', 'estado', 'actividad_id']).drop_duplicates(subset=['unit_number'])
+        st.dataframe(df_unidades_clean, use_container_width=True, hide_index=True)
+
+        # 5. Exportación a Excel
+        st.divider()
+        if st.button("📥 Generar Reporte Excel"):
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Dashboard_General')
+                df_unidades_clean.to_excel(writer, index=False, sheet_name='Solo_Unidades')
+            
+            st.download_button(
+                label="⬇️ Descargar Reporte",
+                data=output.getvalue(),
+                file_name=f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    # AUTO-REFRESCO PARA ADMIN
     time.sleep(60)
     st.rerun()

@@ -12,6 +12,7 @@ st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
+# 9 Campos de Series Técnicas
 CAMPOS_SERIES = {
     "vin_number": "VIN NUMBER",
     "reefer_serial": "REEFER SERIAL",
@@ -24,6 +25,7 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "BATTERY CHARGER"
 }
 
+# 13 Actividades exactas de la imagen bfe824.png
 ACTIVIDADES_CARRIER = [
     "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
     "Programación", "Soldadura en sitio", "Vacios", "Accesorios", 
@@ -61,7 +63,7 @@ def execute_write(query, params=None):
         cur.close()
         conn.close()
 
-# ==================== LOGIN ====================
+# ==================== LOGIN (CASE INSENSITIVE) ====================
 if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
 
@@ -116,7 +118,7 @@ elif menu == "📸 Registro":
         valor = st.text_input("Valor")
     if st.button("💾 Guardar"):
         execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
-        st.success("Información registrada correctamente.")
+        st.success("Información registrada.")
 
 elif menu == "🎯 Asignación":
     st.subheader("Asignar Actividad")
@@ -134,7 +136,7 @@ elif menu == "🎯 Asignación":
 elif menu == "🎯 Mis Tareas":
     st.subheader(f"Tareas de {st.session_state.user}")
     mis_t = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-    if not mis_t: st.write("No tienes tareas pendientes.")
+    if not mis_t: st.write("Sin tareas.")
     else:
         for t in mis_t:
             with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}"):
@@ -145,9 +147,9 @@ elif menu == "🎯 Mis Tareas":
                 elif t['actividad_id'] == "toma de series":
                     with st.form(f"form_{t['id']}"):
                         res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                        if st.form_submit_button("Finalizar y Guardar"):
-                            sets = ", ".join([f"{k}=%s" for k in res.keys()])
-                            execute_write(f"UPDATE unidades SET {sets} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
+                        if st.form_submit_button("Guardar"):
+                            set_q = ", ".join([f"{k}=%s" for k in res.keys()])
+                            execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
                             execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
                             st.rerun()
                 else:
@@ -158,61 +160,46 @@ elif menu == "🎯 Mis Tareas":
     st.rerun()
 
 elif menu == "📊 Dashboard":
-    st.subheader("Dashboard de Control y Desglose")
-    res = execute_read("SELECT u.*, a.tecnico, a.actividad_id, a.estado, a.fecha_inicio, a.fecha_fin FROM unidades u LEFT JOIN asignaciones a ON u.unit_number = a.unidad")
+    st.subheader("Dashboard de Control y Métricas")
+    res = execute_read("SELECT u.*, a.tecnico, a.actividad_id, a.estado FROM unidades u LEFT JOIN asignaciones a ON u.unit_number = a.unidad")
     
     if res:
         df = pd.DataFrame(res)
         
+        # --- MÉTRICAS NUMÉRICAS POR TÉCNICO ---
+        st.markdown("### 📈 Resumen Numérico por Técnico")
+        df_stats = df.dropna(subset=['tecnico'])
+        if not df_stats.empty:
+            pivot_stats = df_stats.pivot_table(index='tecnico', columns='estado', values='unit_number', aggfunc='count', fill_value=0).reset_index()
+            for col in ['pendiente', 'en_proceso', 'completada']:
+                if col not in pivot_stats.columns: pivot_stats[col] = 0
+            
+            pivot_stats['Total'] = pivot_stats['pendiente'] + pivot_stats['en_proceso'] + pivot_stats['completada']
+            st.dataframe(pivot_stats.rename(columns={'tecnico': 'Técnico', 'pendiente': 'Pendientes 🟡', 'en_proceso': 'En Proceso 🔵', 'completada': 'Completadas ✅'}), use_container_width=True, hide_index=True)
+
         # --- GRÁFICAS ---
         c1, c2 = st.columns(2)
         with c1:
-            df_tec = df.dropna(subset=['tecnico'])
-            if not df_tec.empty:
-                fig_prod = px.bar(df_tec, x='tecnico', color='estado', title="Actividades por Técnico", barmode='group')
+            if not df_stats.empty:
+                fig_prod = px.bar(df_stats, x='tecnico', color='estado', title="Carga por Técnico", barmode='group')
                 st.plotly_chart(fig_prod, use_container_width=True)
         with c2:
-            st.plotly_chart(px.pie(df, names='estado', title="Estado Global de Actividades"), use_container_width=True)
-
-        # --- SECCIÓN DE DESGLOSE (SOLICITADO) ---
-        st.markdown("### 🔍 Desglose de Actividades Asignadas")
-        df_desglose = df.dropna(subset=['tecnico']) # Solo mostrar lo que tiene técnico asignado
-        if not df_desglose.empty:
-            # Seleccionamos y renombramos columnas para mayor claridad
-            display_cols = {
-                'id_lote': 'LOTE',
-                'unit_number': 'UNIDAD',
-                'tecnico': 'TÉCNICO',
-                'actividad_id': 'ACTIVIDAD',
-                'estado': 'ESTADO ACTUAL'
-            }
-            st.dataframe(df_desglose[list(display_cols.keys())].rename(columns=display_cols), use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay actividades asignadas actualmente.")
+            st.plotly_chart(px.pie(df, names='estado', title="Estado Global"), use_container_width=True)
 
         # --- VISTA POR LOTES ---
-        st.write("### 🏗️ Jerarquía de Trabajo por Lotes")
-        lotes_unicos = df['id_lote'].unique()
-        for lote in lotes_unicos:
+        st.write("### 🏗️ Jerarquía por Lotes")
+        for lote in df['id_lote'].unique():
             with st.expander(f"LOTE: {lote}"):
                 st.table(df[df['id_lote']==lote][['unit_number', 'tecnico', 'actividad_id', 'estado']])
         
-        # --- REGISTRO GENERAL ---
-        st.write("### 📋 Registro General de Series")
-        st.dataframe(df.drop(columns=['tecnico', 'estado', 'actividad_id', 'fecha_inicio', 'fecha_fin']).drop_duplicates(), hide_index=True)
-
-        # --- EXPORTACIÓN (DESGLOSE GENERAL) ---
+        # --- EXPORTACIÓN GENERAL ---
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            # Exportamos el DataFrame completo que contiene el desglose general (Series + Actividades + Estados)
             df.to_excel(writer, index=False, sheet_name='Desglose_General')
+            if not df_stats.empty:
+                pivot_stats.to_excel(writer, index=False, sheet_name='Metricas_Tecnicos')
         
-        st.download_button(
-            label="📥 Descargar Exportación General (Excel)",
-            data=buffer.getvalue(),
-            file_name=f"Reporte_General_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.download_button("📥 Descargar Reporte y Métricas (Excel)", buffer.getvalue(), f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx")
     
     time.sleep(60)
     st.rerun()

@@ -61,7 +61,7 @@ def execute_write(query, params=None):
         cur.close()
         conn.close()
 
-# ==================== LOGIN ====================
+# ==================== LOGIN (MEJORADO) ====================
 if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
 
@@ -105,17 +105,20 @@ if menu == "👥 Usuarios":
             execute_write("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (nu, np, nr))
             st.success("Usuario creado")
 
+# --- REGISTRO DE UNIDADES (RESTAURADO AL ORIGINAL) ---
 elif menu == "📸 Registro":
-    st.subheader("Registro de Unidades")
+    st.markdown('<div class="main-header">REGISTRO DE UNIDADES</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        u_n, l_n = st.text_input("Unit Number"), st.text_input("Lote")
+        u_num = st.text_input("Unit Number")
+        lote = st.text_input("Lote")
     with c2:
-        f_n = st.selectbox("Campo", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
-        v_n = st.text_input("Valor")
+        campo = st.selectbox("Campo", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
+        valor = st.text_input("Valor")
     if st.button("💾 Guardar"):
-        execute_write(f"INSERT INTO unidades (unit_number, id_lote, {f_n}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {f_n}=%s", (u_n, l_n, v_n, l_n, v_n))
-        st.success("Registrado")
+        # Lógica original de inserción/actualización de un solo campo
+        execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
+        st.success("Guardado correctamente")
 
 elif menu == "🎯 Asignación":
     st.subheader("Asignar Actividad")
@@ -163,18 +166,16 @@ elif menu == "📊 Dashboard":
         c1, c2 = st.columns(2)
         with c1:
             df_tec = df.dropna(subset=['tecnico'])
-            # Muestra productividad incluyendo todos los técnicos con tareas
-            fig_prod = px.bar(df_tec, x='tecnico', color='estado', title="Carga de Trabajo por Técnico", 
-                             labels={'tecnico': 'Técnico', 'count': 'Cantidad'}, barmode='group')
+            # Muestra todos los técnicos con carga de trabajo
+            fig_prod = px.bar(df_tec, x='tecnico', color='estado', title="Carga de Trabajo por Técnico", barmode='group')
             st.plotly_chart(fig_prod, use_container_width=True)
         with c2:
-            st.plotly_chart(px.pie(df, names='estado', title="Estado de Todas las Tareas"), use_container_width=True)
+            st.plotly_chart(px.pie(df, names='estado', title="Estado General"), use_container_width=True)
         
         st.write("### 🏗️ Jerarquía por Lotes")
-        if not df['id_lote'].dropna().empty:
-            for lote in df['id_lote'].unique():
-                with st.expander(f"LOTE: {lote}"):
-                    st.table(df[df['id_lote']==lote][['unit_number', 'tecnico', 'actividad_id', 'estado']])
+        for lote in df['id_lote'].unique():
+            with st.expander(f"LOTE: {lote}"):
+                st.table(df[df['id_lote']==lote][['unit_number', 'tecnico', 'actividad_id', 'estado']])
         
         st.write("### 📋 Registro al Momento")
         st.dataframe(df.drop(columns=['tecnico', 'estado', 'actividad_id']).drop_duplicates(), hide_index=True)
@@ -182,7 +183,7 @@ elif menu == "📊 Dashboard":
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-        st.download_button("📥 Reporte Excel", buffer.getvalue(), "reporte_carrier.xlsx")
+        st.download_button("📥 Excel", buffer.getvalue(), "reporte_carrier.xlsx")
     
     time.sleep(60)
     st.rerun()

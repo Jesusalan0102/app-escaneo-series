@@ -24,6 +24,7 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "BATTERY CHARGER"
 }
 
+# 13 Actividades según imagen bfe824.png
 ACTIVIDADES_CARRIER = [
     "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
     "Programación", "Soldadura en sitio", "Vacios", "Accesorios", 
@@ -61,7 +62,7 @@ def execute_write(query, params=None):
         cur.close()
         conn.close()
 
-# ==================== LOGIN (MEJORADO) ====================
+# ==================== LOGIN ====================
 if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
 
@@ -71,6 +72,7 @@ if not st.session_state.login:
     p_log = st.text_input("Contraseña", type="password").strip()
     
     if st.button("Entrar"):
+        # Corrección para Adrian: Búsqueda insensible a mayúsculas
         user = execute_read("SELECT * FROM users WHERE LOWER(username)=LOWER(%s) AND password=%s", (u_log, p_log))
         if user:
             st.session_state.update({"login": True, "user": user[0]['username'], "role": user[0]['role'].lower()})
@@ -105,9 +107,9 @@ if menu == "👥 Usuarios":
             execute_write("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (nu, np, nr))
             st.success("Usuario creado")
 
-# --- REGISTRO DE UNIDADES (RESTAURADO AL ORIGINAL) ---
 elif menu == "📸 Registro":
     st.markdown('<div class="main-header">REGISTRO DE UNIDADES</div>', unsafe_allow_html=True)
+    # Regresado al formato original de registro individual
     c1, c2 = st.columns(2)
     with c1:
         u_num = st.text_input("Unit Number")
@@ -116,16 +118,16 @@ elif menu == "📸 Registro":
         campo = st.selectbox("Campo", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
         valor = st.text_input("Valor")
     if st.button("💾 Guardar"):
-        # Lógica original de inserción/actualización de un solo campo
         execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
-        st.success("Guardado correctamente")
+        st.success("Información registrada correctamente.")
 
 elif menu == "🎯 Asignación":
     st.subheader("Asignar Actividad")
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
     t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
     c1, c2, c3 = st.columns(3)
-    u_s = c1.selectbox("Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db] if u_db else [])
+    u_list = [f"{x['id_lote']} - {x['unit_number']}" for x in u_db] if u_db else []
+    u_s = c1.selectbox("Unidad", u_list)
     t_s = c2.selectbox("Técnico", [x['username'] for x in t_db] if t_db else [])
     a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
     if st.button("📌 Asignar"):
@@ -135,55 +137,60 @@ elif menu == "🎯 Asignación":
 elif menu == "🎯 Mis Tareas":
     st.subheader(f"Tareas de {st.session_state.user}")
     mis_t = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-    if not mis_t: st.write("Sin tareas.")
+    if not mis_t: st.write("No tienes tareas pendientes.")
     else:
         for t in mis_t:
             with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}"):
                 if t['estado'] == 'pendiente':
-                    if st.button(f"Iniciar #{t['id']}"):
+                    if st.button(f"Iniciar Trabajo #{t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=NOW() WHERE id=%s", (t['id'],))
                         st.rerun()
                 elif t['actividad_id'] == "toma de series":
                     with st.form(f"form_{t['id']}"):
+                        # 9 campos técnicos en el formulario de serie
                         res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                        if st.form_submit_button("Guardar"):
-                            set_q = ", ".join([f"{k}=%s" for k in res.keys()])
-                            execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
+                        if st.form_submit_button("Finalizar y Guardar"):
+                            sets = ", ".join([f"{k}=%s" for k in res.keys()])
+                            execute_write(f"UPDATE unidades SET {sets} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
                             execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
                             st.rerun()
                 else:
-                    if st.button(f"Finalizar #{t['id']}"):
+                    if st.button(f"Finalizar Tarea #{t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
                         st.rerun()
     time.sleep(60)
     st.rerun()
 
 elif menu == "📊 Dashboard":
-    st.subheader("Estado de Producción")
+    st.subheader("Dashboard de Control")
+    # Consulta unificada para evitar el error de StatusColumn
     res = execute_read("SELECT u.*, a.tecnico, a.estado, a.actividad_id FROM unidades u LEFT JOIN asignaciones a ON u.unit_number = a.unidad")
     if res:
         df = pd.DataFrame(res)
         c1, c2 = st.columns(2)
         with c1:
+            # Gráfica corregida para mostrar a todos los técnicos
             df_tec = df.dropna(subset=['tecnico'])
-            # Muestra todos los técnicos con carga de trabajo
-            fig_prod = px.bar(df_tec, x='tecnico', color='estado', title="Carga de Trabajo por Técnico", barmode='group')
-            st.plotly_chart(fig_prod, use_container_width=True)
+            if not df_tec.empty:
+                fig_prod = px.bar(df_tec, x='tecnico', color='estado', title="Actividades por Técnico", barmode='group')
+                st.plotly_chart(fig_prod, use_container_width=True)
         with c2:
-            st.plotly_chart(px.pie(df, names='estado', title="Estado General"), use_container_width=True)
+            st.plotly_chart(px.pie(df, names='estado', title="Estado Global de Unidades"), use_container_width=True)
         
-        st.write("### 🏗️ Jerarquía por Lotes")
-        for lote in df['id_lote'].unique():
+        st.write("### 🏗️ Vista por Lotes")
+        lotes_unicos = df['id_lote'].unique()
+        for lote in lotes_unicos:
             with st.expander(f"LOTE: {lote}"):
+                # Tabla simple para evitar errores de configuración de columnas
                 st.table(df[df['id_lote']==lote][['unit_number', 'tecnico', 'actividad_id', 'estado']])
         
-        st.write("### 📋 Registro al Momento")
+        st.write("### 📋 Registro General de Series")
         st.dataframe(df.drop(columns=['tecnico', 'estado', 'actividad_id']).drop_duplicates(), hide_index=True)
 
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-        st.download_button("📥 Excel", buffer.getvalue(), "reporte_carrier.xlsx")
+        st.download_button("📥 Descargar Reporte Completo", buffer.getvalue(), "reporte_carrier.xlsx")
     
     time.sleep(60)
     st.rerun()

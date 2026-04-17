@@ -7,7 +7,7 @@ import io
 import time
 
 # ==================== CONFIGURACIÓN ====================
-st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout="wide")
+st.set_page_config(page_title="Carrier Transicold - Gestión", layout="wide")
 
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
@@ -34,6 +34,8 @@ st.markdown(f"""
 <style>
     .main-header {{ font-size: 2.3rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
     .stButton>button {{ width: 100%; border-radius: 5px; height: 3em; background-color: {CARRIER_BLUE}; color: white; }}
+    .card {{ background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid {CARRIER_BLUE}; margin-bottom: 10px; }}
+    div[data-testid="stExpander"] {{ border: 1px solid {CARRIER_BLUE}; border-radius: 10px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,110 +118,115 @@ elif menu == "📸 Registro":
         valor = st.text_input("Valor")
     if st.button("💾 Guardar"):
         execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
-        st.success("Información registrada.")
+        st.success("Información técnica actualizada.")
 
 elif menu == "🎯 Asignación":
-    st.subheader("Nueva Asignación")
-    u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
-    t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
+    st.markdown('<div class="main-header">ASIGNACIÓN Y GESTIÓN</div>', unsafe_allow_html=True)
     
-    c1, c2, c3 = st.columns(3)
-    u_list = [f"{x['id_lote']} - {x['unit_number']}" for x in u_db] if u_db else []
-    u_s = c1.selectbox("Unidad", u_list)
-    t_s = c2.selectbox("Técnico", [x['username'] for x in t_db] if t_db else [])
-    a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
-    
-    if st.button("📌 Asignar"):
-        execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_s.split(" - ")[1], a_s, t_s))
-        st.success("Tarea asignada")
+    # --- PARTE 1: NUEVA ASIGNACIÓN ---
+    with st.expander("➕ Nueva Asignación de Tarea", expanded=True):
+        u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
+        t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
+        
+        c1, c2, c3 = st.columns(3)
+        u_list = [f"{x['id_lote']} - {x['unit_number']}" for x in u_db] if u_db else []
+        u_s = c1.selectbox("Unidad", u_list)
+        t_s = c2.selectbox("Técnico", [x['username'] for x in t_db] if t_db else [])
+        a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
+        
+        if st.button("📌 Confirmar Asignación"):
+            execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_s.split(" - ")[1], a_s, t_s))
+            st.success("Tarea asignada correctamente.")
+            st.rerun()
 
     st.divider()
-    st.subheader("🗑️ Gestionar Asignaciones Activas")
+
+    # --- PARTE 2: ELIMINACIÓN (REUBICADO Y FORMATEADO) ---
+    st.subheader("🗑️ Control de Tareas Activas")
     asig_activas = execute_read("SELECT id, unidad, actividad_id, tecnico, estado FROM asignaciones WHERE estado != 'completada'")
+    
     if asig_activas:
         for a in asig_activas:
-            col_info, col_btn = st.columns([4, 1])
-            col_info.write(f"**Unidad:** {a['unidad']} | **Actividad:** {a['actividad_id']} | **Técnico:** {a['tecnico']} ({a['estado']})")
-            if col_btn.button("Eliminar", key=f"del_{a['id']}"):
-                execute_write("DELETE FROM asignaciones WHERE id = %s", (a['id'],))
-                st.rerun()
+            with st.container():
+                st.markdown(f"""
+                <div class="card">
+                    <strong>Unidad:</strong> {a['unidad']} | 
+                    <strong>Actividad:</strong> {a['actividad_id']} | 
+                    <strong>Técnico:</strong> {a['tecnico']} | 
+                    <strong>Estado:</strong> {a['estado'].upper()}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Botón de eliminación con clave única
+                if st.button(f"Eliminar Asignación #{a['id']}", key=f"del_task_{a['id']}", type="secondary"):
+                    execute_write("DELETE FROM asignaciones WHERE id = %s", (a['id'],))
+                    st.toast(f"Tarea {a['id']} eliminada.")
+                    st.rerun()
+    else:
+        st.info("No hay tareas pendientes por gestionar.")
 
 elif menu == "🎯 Mis Tareas":
     st.subheader(f"Tareas de {st.session_state.user}")
     mis_t = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-    if not mis_t: st.write("Sin tareas pendientes.")
+    if not mis_t: st.write("Sin tareas asignadas.")
     else:
         for t in mis_t:
             with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}"):
                 if t['estado'] == 'pendiente':
-                    if st.button(f"Iniciar Trabajo #{t['id']}"):
+                    if st.button(f"Iniciar #{t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=NOW() WHERE id=%s", (t['id'],))
                         st.rerun()
                 elif t['actividad_id'] == "toma de series":
                     with st.form(f"form_{t['id']}"):
                         res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                        if st.form_submit_button("Guardar"):
+                        if st.form_submit_button("Finalizar Registro"):
                             set_q = ", ".join([f"{k}=%s" for k in res.keys()])
                             execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
                             execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
                             st.rerun()
                 else:
-                    if st.button(f"Finalizar Tarea #{t['id']}"):
+                    if st.button(f"Marcar como Finalizada #{t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
                         st.rerun()
     time.sleep(60)
     st.rerun()
 
 elif menu == "📊 Dashboard":
-    st.subheader("Dashboard de Control Carrier")
+    st.subheader("Métricas de Operación")
     
-    # 1. Obtener Datos de Unidades (Series Técnicas) - SIN DUPLICADOS
+    # Obtener datos frescos
     unidades_raw = execute_read("SELECT * FROM unidades")
-    df_unidades = pd.DataFrame(unidades_raw) if unidades_raw else pd.DataFrame()
-
-    # 2. Obtener Datos de Asignaciones (Gestión de Tareas)
     asig_raw = execute_read("SELECT * FROM asignaciones")
+    
+    df_unidades = pd.DataFrame(unidades_raw) if unidades_raw else pd.DataFrame()
     df_asig = pd.DataFrame(asig_raw) if asig_raw else pd.DataFrame()
 
-    # --- MÉTRICAS NUMÉRICAS POR TÉCNICO (Basado solo en asignaciones) ---
     if not df_asig.empty:
-        st.markdown("### 📈 Resumen de Productividad por Técnico")
-        pivot_stats = df_asig.pivot_table(index='tecnico', columns='estado', values='id', aggfunc='count', fill_value=0).reset_index()
+        # Métricas numéricas
+        pivot = df_asig.pivot_table(index='tecnico', columns='estado', values='id', aggfunc='count', fill_value=0).reset_index()
         for col in ['pendiente', 'en_proceso', 'completada']:
-            if col not in pivot_stats.columns: pivot_stats[col] = 0
+            if col not in pivot.columns: pivot[col] = 0
         
-        pivot_stats['Total'] = pivot_stats['pendiente'] + pivot_stats['en_proceso'] + pivot_stats['completada']
-        st.dataframe(pivot_stats.rename(columns={'tecnico': 'Técnico', 'pendiente': 'Pendientes 🟡', 'en_proceso': 'En Proceso 🔵', 'completada': 'Completadas ✅'}), use_container_width=True, hide_index=True)
+        st.markdown("#### Resumen de Productividad")
+        st.dataframe(pivot.rename(columns={'tecnico': 'Técnico', 'pendiente': 'Pendientes', 'en_proceso': 'En Proceso', 'completada': 'Completadas'}), use_container_width=True, hide_index=True)
 
         c1, c2 = st.columns(2)
         with c1:
-            fig_prod = px.bar(df_asig, x='tecnico', color='estado', title="Carga Visual por Técnico", barmode='group')
-            st.plotly_chart(fig_prod, use_container_width=True)
+            st.plotly_chart(px.bar(df_asig, x='tecnico', color='estado', title="Carga por Técnico", barmode='group'), use_container_width=True)
         with c2:
-            st.plotly_chart(px.pie(df_asig, names='estado', title="Estado Global de Tareas"), use_container_width=True)
+            st.plotly_chart(px.pie(df_asig, names='estado', title="Estado de Tareas"), use_container_width=True)
 
-    # --- DESGLOSE DE REGISTRO DE SERIES (RESTAURADO) ---
-    st.markdown("### 📋 Desglose de Registro de Series")
+    # Registro de Series (Independiente)
+    st.markdown("#### Registro Técnico de Unidades")
     if not df_unidades.empty:
-        # Mostramos la tabla técnica pura
         st.dataframe(df_unidades, use_container_width=True, hide_index=True)
         
-        # Vista por lotes simplificada (solo unidades técnicas)
-        st.write("### 🏗️ Unidades por Lote")
-        for lote in df_unidades['id_lote'].unique():
-            with st.expander(f"LOTE: {lote}"):
-                st.table(df_unidades[df_unidades['id_lote']==lote][['unit_number'] + list(CAMPOS_SERIES.keys())])
-    else:
-        st.info("No hay unidades registradas.")
-
-    # --- EXPORTACIÓN ---
-    if not df_unidades.empty or not df_asig.empty:
+        # Botón de descarga
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            if not df_unidades.empty: df_unidades.to_excel(writer, index=False, sheet_name='Series_Tecnicas')
-            if not df_asig.empty: df_asig.to_excel(writer, index=False, sheet_name='Estado_Tareas')
-        
-        st.download_button("📥 Descargar Reporte Completo (Excel)", buffer.getvalue(), f"Reporte_Carrier_{datetime.now().strftime('%Y%m%d')}.xlsx")
-    
+            if not df_unidades.empty: df_unidades.to_excel(writer, index=False, sheet_name='Series')
+            if not df_asig.empty: df_asig.to_excel(writer, index=False, sheet_name='Asignaciones')
+        st.download_button("📥 Exportar a Excel", buffer.getvalue(), f"Reporte_{datetime.now().strftime('%Y%m%d')}.xlsx")
+
     time.sleep(60)
     st.rerun()

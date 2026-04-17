@@ -72,7 +72,6 @@ def execute_write(query, params=None):
             conn.close()
             return True
         except Error as e:
-            # Captura IntegrityError (duplicados) sin romper el código
             return e
     return "No hay conexión"
 
@@ -118,19 +117,15 @@ if menu == "👥 Usuarios":
         nu = st.text_input("Nuevo Usuario").strip()
         np = st.text_input("Contraseña").strip()
         nr = st.selectbox("Rol", ["tecnico", "admin"])
-        
         if st.form_submit_button("Registrar"):
             if nu and np:
-                # Validamos duplicados manualmente antes de insertar
                 check = execute_read("SELECT * FROM users WHERE username = %s", (nu,))
-                if check:
-                    st.warning(f"El usuario '{nu}' ya está registrado.")
+                if check: st.warning(f"El usuario '{nu}' ya existe.")
                 else:
                     res = execute_write("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", (nu, np, nr))
                     if res is True: st.success("Registrado correctamente.")
                     else: st.error(f"Error: {res}")
-            else:
-                st.warning("Todos los campos son obligatorios.")
+            else: st.warning("Todos los campos son obligatorios.")
 
 elif menu == "📸 Registro":
     st.markdown('<div class="main-header">REGISTRO TÉCNICO DE UNIDADES</div>', unsafe_allow_html=True)
@@ -143,13 +138,11 @@ elif menu == "📸 Registro":
         with c2:
             campo = st.selectbox("Campo", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
             valor = st.text_input("Serial").strip()
-        
         if st.button("💾 Guardar"):
             if u_num and lote and valor:
                 execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, lote, valor, lote, valor))
                 st.success(f"Unidad {u_num} actualizada.")
-            else:
-                st.warning("Faltan datos para el registro.")
+            else: st.warning("Faltan datos para el registro.")
         st.markdown('</div>', unsafe_allow_html=True)
 
 elif menu == "🎯 Asignación":
@@ -158,12 +151,10 @@ elif menu == "🎯 Asignación":
         u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
         t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
         u_list = [f"{x['id_lote']} - {x['unit_number']}" for x in u_db]
-        
         c1, c2, c3 = st.columns(3)
         u_s = c1.selectbox("Unidad", u_list) if u_list else c1.info("No hay unidades.")
         t_s = c2.selectbox("Técnico", [x['username'] for x in t_db]) if t_db else c2.info("No hay técnicos.")
         a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
-        
         if st.button("Confirmar") and u_s and t_s:
             execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'pendiente')", (u_s.split(" - ")[1], a_s, t_s))
             st.rerun()
@@ -210,15 +201,22 @@ elif menu == "📊 Dashboard":
         pivot = df_a.pivot_table(index='tecnico', columns='estado', values='id', aggfunc='count', fill_value=0).reset_index()
         for c in ['pendiente', 'en_proceso', 'completada']:
             if c not in pivot.columns: pivot[c] = 0
+        st.markdown("#### Resumen Numérico de Tareas")
         st.dataframe(pivot, use_container_width=True, hide_index=True)
         
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(px.bar(df_a, x='tecnico', color='estado', barmode='group', title="Productividad"), use_container_width=True)
+        with c1: st.plotly_chart(px.bar(df_a, x='tecnico', color='estado', barmode='group', title="Carga por Técnico"), use_container_width=True)
         with c2: st.plotly_chart(px.pie(df_a, names='estado', title="Estado Global"), use_container_width=True)
 
     if unid:
-        st.markdown("### 📋 Registro Maestro de Series")
         df_u = pd.DataFrame(unid)
+        # --- SECCIÓN DE LOTES RESTAURADA ---
+        st.markdown("### 🏗️ Unidades por Proyecto / Lote")
+        for lote in df_u['id_lote'].unique():
+            with st.expander(f"LOTE: {lote}"):
+                st.table(df_u[df_u['id_lote']==lote][['unit_number'] + list(CAMPOS_SERIES.keys())])
+        
+        st.markdown("### 📋 Registro Maestro General")
         st.dataframe(df_u, use_container_width=True, hide_index=True)
         
         buffer = io.BytesIO()

@@ -8,9 +8,10 @@ import io
 import time
 
 # ==================== CONFIGURACIÓN ====================
-st.set_page_config(page_title="Carrier Transicold - Sistema de Gestión", layout="wide")
+st.set_page_config(page_title="Carrier Transicold - Panel de Gestión", layout="wide")
 
 CARRIER_BLUE = "#002B5B"
+BACKGROUND_COLOR = "#F4F7F9"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
 
 CAMPOS_SERIES = {
@@ -31,12 +32,39 @@ ACTIVIDADES_CARRIER = [
     "toma de valores", "Evidencia", "standby", "toma de series"
 ]
 
-# --- ESTILOS ---
+# --- ESTILOS PROFESIONALES AVANZADOS ---
 st.markdown(f"""
 <style>
-    .main-header {{ font-size: 2.3rem; font-weight: bold; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 20px; }}
-    .stButton>button {{ width: 100%; border-radius: 8px; height: 3em; background-color: {CARRIER_BLUE}; color: white; font-weight: bold; }}
-    .card {{ background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid {CARRIER_BLUE}; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; }}
+    /* Globales */
+    .stApp {{ background-color: {BACKGROUND_COLOR}; }}
+    .main-header {{ font-size: 2.5rem; font-weight: 800; color: {CARRIER_BLUE}; text-align: center; margin-bottom: 30px; letter-spacing: -1px; }}
+    
+    /* Contenedor del Logo (Punto 1) */
+    .logo-container {{ text-align: center; background-color: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 25px; border: 1px solid #e1e8ed; }}
+    
+    /* Tarjetas de UI Generales */
+    .stButton>button {{ width: 100%; border-radius: 8px; height: 3.2em; background-color: {CARRIER_BLUE}; color: white; font-weight: bold; border: none; transition: 0.3s; }}
+    .stButton>button:hover {{ background-color: #004080; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }}
+    
+    /* Estilo de Formularios y Inputs */
+    .stTextInput>div>div>input, .stSelectbox>div>div>div {{ border-radius: 8px !important; border: 1px solid #c8d1d9 !important; padding: 10px !important; }}
+    
+    /* Tarjetas de Registro/Asignación */
+    .card {{ background-color: #ffffff; padding: 25px; border-radius: 15px; border-left: 6px solid {CARRIER_BLUE}; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #e1e8ed; }}
+    
+    /* Recuadro Contable de Tareas (Punto 2) */
+    .task-accounting-card {{ background-color: white; padding: 20px; border-radius: 12px; border: 1px solid #e1e8ed; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; }}
+    .task-header {{ font-size: 1.3rem; font-weight: 700; color: {CARRIER_BLUE}; border-bottom: 2px solid #e1e8ed; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }}
+    .task-count {{ background-color: {CARRIER_BLUE}; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.9rem; }}
+    .task-list {{ list-style-type: none; padding: 0; margin: 0; }}
+    .task-item {{ padding: 10px 0; border-bottom: 1px solid #f0f2f6; display: flex; justify-content: space-between; }}
+    .task-item:last-child {{ border-bottom: none; }}
+    .status-badge {{ padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }}
+    .status-pendiente {{ background-color: #FFE082; color: #827717; }}
+    .status-en_proceso {{ background-color: #BBDEFB; color: #1565C0; }}
+
+    /* Tablas */
+    .dataframe {{ border-radius: 10px; overflow: hidden; border: 1px solid #e1e8ed !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,26 +108,33 @@ if "login" not in st.session_state:
     st.session_state.update({"login": False, "user": "", "role": ""})
 
 if not st.session_state.login:
-    st.markdown('<div class="main-header">Acceso Carrier</div>', unsafe_allow_html=True)
-    u_log = st.text_input("Usuario").strip()
-    p_log = st.text_input("Contraseña", type="password").strip()
+    # Logo formal en el login (Punto 1)
+    st.markdown(f'<div class="logo-container"><img src="{LOGO_URL}" width="350"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Acceso al Sistema</div>', unsafe_allow_html=True)
     
-    if st.button("Entrar"):
-        if u_log and p_log:
-            user = execute_read("SELECT * FROM users WHERE TRIM(LOWER(username)) = TRIM(LOWER(%s)) AND password = %s", (u_log, p_log))
-            if user:
-                st.session_state.update({"login": True, "user": user[0]['username'], "role": user[0]['role'].lower()})
-                st.rerun()
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        u_log = st.text_input("Usuario").strip()
+        p_log = st.text_input("Contraseña", type="password").strip()
+        
+        if st.button("Entrar"):
+            if u_log and p_log:
+                user = execute_read("SELECT * FROM users WHERE TRIM(LOWER(username)) = TRIM(LOWER(%s)) AND password = %s", (u_log, p_log))
+                if user:
+                    st.session_state.update({"login": True, "user": user[0]['username'], "role": user[0]['role'].lower()})
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos.")
             else:
-                st.error("Usuario o contraseña incorrectos.")
-        else:
-            st.warning("Por favor, ingrese sus credenciales.")
+                st.warning("Por favor, ingrese sus credenciales.")
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# ==================== SIDEBAR ====================
+# ==================== SIDEBAR PROFESIONAL ====================
 with st.sidebar:
-    st.image(LOGO_URL, width=150)
-    st.write(f"💼 Usuario: **{st.session_state.user}**")
+    # Logo formal en Sidebar (Punto 1)
+    st.markdown(f'<div class="logo-container"><img src="{LOGO_URL}" width="200"></div>', unsafe_allow_html=True)
+    st.write(f"👤 Usuario: **{st.session_state.user}**")
     st.divider()
     
     is_admin = st.session_state.role == "admin"
@@ -169,27 +204,67 @@ elif menu == "🎯 Asignación":
             st.rerun()
 
 elif menu == "🎯 Mis Tareas":
-    st.subheader(f"Tareas de {st.session_state.user}")
-    mis_t = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
-    if not mis_t: st.info("No tienes tareas pendientes.")
-    for t in mis_t:
-        with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}"):
-            if t['estado'] == 'pendiente':
-                if st.button(f"Iniciar #{t['id']}"):
-                    execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=NOW() WHERE id=%s", (t['id'],))
-                    st.rerun()
-            elif t['actividad_id'] == "toma de series":
-                with st.form(f"f_{t['id']}"):
-                    res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                    if st.form_submit_button("Guardar"):
-                        set_q = ", ".join([f"{k}=%s" for k in res.keys()])
-                        execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
-                        execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
-                        st.rerun()
-            else:
-                if st.button(f"Completar #{t['id']}"):
-                    execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (t['id'],))
-                    st.rerun()
+    st.markdown('<div class="main-header">PANEL DE TAREAS</div>', unsafe_allow_html=True)
+    
+    mis_t_raw = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado!='completada'", (st.session_state.user,))
+    
+    if not mis_t_raw:
+        st.info("No tienes tareas pendientes.")
+    else:
+        df_mis_t = pd.DataFrame(mis_t_raw)
+        
+        # --- RECUADRO CONTABLE DE TAREAS (Punto 2) ---
+        # Agrupamos tareas por unidad para contabilizar
+        unidades_tareas = df_mis_t['unidad'].unique()
+        
+        for unidad in unidades_tareas:
+            tareas_unidad = df_mis_t[df_mis_t['unidad'] == unidad]
+            num_tareas = len(tareas_unidad)
+            
+            with st.container():
+                st.markdown(f"""
+                <div class="task-accounting-card">
+                    <div class="task-header">
+                        <span>📦 Unidad: {unidad}</span>
+                        <span class="task-count">{num_tareas} Actividades</span>
+                    </div>
+                    <ul class="task-list">
+                """, unsafe_allow_html=True)
+                
+                # Iterar sobre las tareas de esta unidad
+                for _, task in tareas_unidad.iterrows():
+                    status_class = f"status-{task['estado']}"
+                    st.markdown(f"""
+                        <li class="task-item">
+                            <span>🛠️ {task['actividad_id']}</span>
+                            <span class="status-badge {status_class}">{task['estado'].upper()}</span>
+                        </li>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("</ul>", unsafe_allow_html=True)
+                
+                # Acciones (Manteniendo la funcionalidad original dentro del nuevo diseño)
+                # Usamos expansor para las acciones de cada tarea específica
+                for _, task in tareas_unidad.iterrows():
+                    with st.expander(f"Acciones para {task['actividad_id']} (ID: {task['id']})", expanded=False):
+                        if task['estado'] == 'pendiente':
+                            if st.button(f"🚀 Iniciar #{task['id']}", key=f"start_{task['id']}"):
+                                execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=NOW() WHERE id=%s", (task['id'],))
+                                st.rerun()
+                        elif task['actividad_id'] == "toma de series":
+                            with st.form(f"f_{task['id']}"):
+                                res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
+                                if st.form_submit_button("Guardar y Finalizar"):
+                                    set_q = ", ".join([f"{k}=%s" for k in res.keys()])
+                                    execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(res.values()) + [task['unidad']])
+                                    execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (task['id'],))
+                                    st.rerun()
+                        else:
+                            if st.button(f"✅ Completar #{task['id']}", key=f"comp_{task['id']}"):
+                                execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (task['id'],))
+                                st.rerun()
+                
+                st.markdown("</div>", unsafe_allow_html=True)
 
 elif menu == "📊 Dashboard":
     st.markdown('<div class="main-header">DASHBOARD DE PRODUCTIVIDAD</div>', unsafe_allow_html=True)
@@ -201,23 +276,30 @@ elif menu == "📊 Dashboard":
         pivot = df_a.pivot_table(index='tecnico', columns='estado', values='id', aggfunc='count', fill_value=0).reset_index()
         for c in ['pendiente', 'en_proceso', 'completada']:
             if c not in pivot.columns: pivot[c] = 0
+        
+        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("#### Resumen Numérico de Tareas")
         st.dataframe(pivot, use_container_width=True, hide_index=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(px.bar(df_a, x='tecnico', color='estado', barmode='group', title="Carga por Técnico"), use_container_width=True)
-        with c2: st.plotly_chart(px.pie(df_a, names='estado', title="Estado Global"), use_container_width=True)
+        with c1: st.plotly_chart(px.bar(df_a, x='tecnico', color='estado', barmode='group', title="Carga por Técnico", color_discrete_sequence=px.colors.qualitative.Bold), use_container_width=True)
+        with c2: st.plotly_chart(px.pie(df_a, names='estado', title="Estado Global", hole=0.4, color_discrete_sequence=px.colors.qualitative.Safe), use_container_width=True)
 
     if unid:
         df_u = pd.DataFrame(unid)
-        # --- SECCIÓN DE LOTES RESTAURADA ---
+        
+        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🏗️ Unidades por Proyecto / Lote")
         for lote in df_u['id_lote'].unique():
             with st.expander(f"LOTE: {lote}"):
                 st.table(df_u[df_u['id_lote']==lote][['unit_number'] + list(CAMPOS_SERIES.keys())])
+        st.markdown('</div>', unsafe_allow_html=True)
         
+        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 📋 Registro Maestro General")
         st.dataframe(df_u, use_container_width=True, hide_index=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:

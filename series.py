@@ -53,7 +53,7 @@ st.markdown(f"""
 # ==================== CONEXIÓN ====================
 def get_db_connection():
     try: return mysql.connector.connect(**st.secrets["db"], autocommit=True)
-    except Error as e: return None
+    except Error: return None
 
 def execute_read(query, params=None):
     conn = get_db_connection()
@@ -127,6 +127,8 @@ if menu == "🎯 Mis Tareas":
         df_mis_t = pd.DataFrame(mis_t_raw)
         for unidad in df_mis_t['unidad'].unique():
             tareas_u = df_mis_t[df_mis_t['unidad'] == unidad]
+            
+            # Recuadro Contable de la Unidad
             st.markdown(f"""
             <div class="task-accounting-card">
                 <div class="task-header">
@@ -136,24 +138,43 @@ if menu == "🎯 Mis Tareas":
             </div>
             """, unsafe_allow_html=True)
             
+            # Lista de actividades dentro de esa unidad
             for _, task in tareas_u.iterrows():
-                with st.expander(f"🛠️ {task['actividad_id']} (Estado: {task['estado'].upper()})"):
+                with st.expander(f"🛠️ {task['actividad_id'].upper()} (Estado: {task['estado'].upper()})"):
+                    # Si está pendiente, botón para iniciar
                     if task['estado'] == 'pendiente':
-                        if st.button(f"🚀 Iniciar #{task['id']}", key=f"in_{task['id']}"):
+                        if st.button(f"🚀 Iniciar Actividad #{task['id']}", key=f"in_{task['id']}"):
                             execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=NOW() WHERE id=%s", (task['id'],))
                             st.rerun()
-                    elif task['actividad_id'] == "toma de series":
-                        with st.form(f"f_{task['id']}"):
-                            res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                            if st.form_submit_button("Finalizar Registro"):
-                                set_q = ", ".join([f"{k}=%s" for k in res.keys()])
-                                execute_write(f"UPDATE unidades SET {set_q} WHERE unit_number=%s", list(res.values()) + [task['unidad']])
+                    
+                    # Si ya está en proceso, mostrar formularios o finalizar
+                    elif task['estado'] == 'en_proceso':
+                        # SECCIÓN RESTAURADA: TOMA DE SERIES
+                        if task['actividad_id'] == "toma de series":
+                            st.subheader("📝 Registro de Series")
+                            with st.form(f"form_series_{task['id']}"):
+                                data_input = {}
+                                c1, c2 = st.columns(2)
+                                i = 0
+                                for key, label in CAMPOS_SERIES.items():
+                                    col = c1 if i % 2 == 0 else c2
+                                    data_input[key] = col.text_input(label, key=f"{key}_{task['id']}")
+                                    i += 1
+                                
+                                if st.form_submit_button("💾 Guardar Todo y Finalizar"):
+                                    # Actualizar tabla Unidades
+                                    set_clause = ", ".join([f"{k}=%s" for k in data_input.keys()])
+                                    execute_write(f"UPDATE unidades SET {set_clause} WHERE unit_number=%s", list(data_input.values()) + [task['unidad']])
+                                    # Marcar asignación como completada
+                                    execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (task['id'],))
+                                    st.success("Series guardadas con éxito.")
+                                    st.rerun()
+                        
+                        # Actividad Normal (solo botón finalizar)
+                        else:
+                            if st.button(f"✅ Marcar como Finalizado #{task['id']}", key=f"fin_{task['id']}"):
                                 execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (task['id'],))
                                 st.rerun()
-                    else:
-                        if st.button(f"✅ Finalizar #{task['id']}", key=f"fin_{task['id']}"):
-                            execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=NOW() WHERE id=%s", (task['id'],))
-                            st.rerun()
 
 elif menu == "🔔 Solicitar Unidad":
     st.markdown('<div class="main-header">SOLICITAR TRABAJO</div>', unsafe_allow_html=True)
@@ -168,7 +189,6 @@ elif menu == "🔔 Solicitar Unidad":
 
 elif menu == "🎯 Asignación":
     st.markdown('<div class="main-header">GESTIÓN DE ASIGNACIONES</div>', unsafe_allow_html=True)
-    
     st.subheader("🔔 Solicitudes por Autorizar")
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
     if sols:

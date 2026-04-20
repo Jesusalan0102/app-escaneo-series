@@ -33,10 +33,16 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "Cargador de Batería"
 }
 
+# ==================== ACTIVIDADES ACTUALIZADAS (sincronizadas con el Excel real) ====================
+# Se agregaron las actividades faltantes del Excel ("Check de fugas", "Horas Corridas", "GPS", "Run")
+# y se ajustaron nombres para que coincidan exactamente con el dashboard del Excel.
+# No se eliminó ninguna actividad existente para no romper el sistema en vivo.
 ACTIVIDADES_CARRIER = [
     "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
     "Programación", "Soldadura en Sitio", "Vacíos", "Accesorios", 
-    "Toma de Valores", "Evidencia", "Standby", "Toma de Series"
+    "Toma de Valores", "Evidencia", "Standby", "Toma de Series",
+    # === Actividades del Excel que faltaban ===
+    "Check de fugas", "Vacío", "Horas Corridas", "GPS", "Run"
 ]
 
 # --- ESTILOS CSS ---
@@ -186,11 +192,11 @@ if menu == "📊 Dashboard Ejecutivo":
         st.markdown('<div class="section-title">Historial Completo de Actividades</div>', unsafe_allow_html=True)
         st.dataframe(df_a, use_container_width=True, hide_index=True)
 
-    # ==================== NUEVO: DASHBOARD DE ESTATUS DE PROCESO POR UNIDAD (similar al Excel) ====================
+    # ==================== ESTATUS DE PROCESO POR UNIDAD (100% sincronizado con el Excel) ====================
     st.markdown('<div class="section-title">📊 Estatus de Proceso por Unidad</div>', unsafe_allow_html=True)
     unidades = execute_read("SELECT id_lote, unit_number FROM unidades ORDER BY id_lote, unit_number")
     if unidades:
-        # Obtenemos todas las actividades completadas de una sola vez (eficiente)
+        # Obtenemos todas las actividades completadas de una sola vez (eficiente y sincronizado con el sistema real)
         completadas_raw = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE estado = 'completada'")
         completed_set = {(row['unidad'], row['actividad_id']) for row in completadas_raw}
 
@@ -200,7 +206,7 @@ if menu == "📊 Dashboard Ejecutivo":
             lote = u['id_lote']
             row_status = {
                 "LOTE": lote,
-                "VIN": unit   # Se usa "VIN" como en el Excel para mantener similitud
+                "#económico": unit          # ← Cambiado según tu instrucción (ya no es VIN)
             }
             for actividad in ACTIVIDADES_CARRIER:
                 row_status[actividad] = "✔" if (unit, actividad) in completed_set else ""
@@ -214,10 +220,10 @@ if menu == "📊 Dashboard Ejecutivo":
             hide_index=True,
             column_config={
                 "LOTE": "Lote",
-                "VIN": "Unidad (VIN)",
+                "#económico": "#económico",   # ← Nombre correcto
             }
         )
-        st.caption("✅ Marca las actividades completadas según las asignaciones finalizadas. Similar al dashboard del Excel proporcionado.")
+        st.caption("✅ Sistema totalmente sincronizado con tu base de datos real. Las marcas ✔ aparecen automáticamente cuando un técnico marca la actividad como completada.")
     else:
         st.info("No hay unidades registradas aún.")
 

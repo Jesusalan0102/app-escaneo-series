@@ -56,6 +56,9 @@ st.markdown(f"""
         background-color: {CARRIER_BLUE}; color: white; 
         padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; float: right; 
     }}
+    .status-table {{ 
+        font-size: 0.95rem; 
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -183,6 +186,41 @@ if menu == "📊 Dashboard Ejecutivo":
         st.markdown('<div class="section-title">Historial Completo de Actividades</div>', unsafe_allow_html=True)
         st.dataframe(df_a, use_container_width=True, hide_index=True)
 
+    # ==================== NUEVO: DASHBOARD DE ESTATUS DE PROCESO POR UNIDAD (similar al Excel) ====================
+    st.markdown('<div class="section-title">📊 Estatus de Proceso por Unidad</div>', unsafe_allow_html=True)
+    unidades = execute_read("SELECT id_lote, unit_number FROM unidades ORDER BY id_lote, unit_number")
+    if unidades:
+        # Obtenemos todas las actividades completadas de una sola vez (eficiente)
+        completadas_raw = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE estado = 'completada'")
+        completed_set = {(row['unidad'], row['actividad_id']) for row in completadas_raw}
+
+        status_data = []
+        for u in unidades:
+            unit = u['unit_number']
+            lote = u['id_lote']
+            row_status = {
+                "LOTE": lote,
+                "VIN": unit   # Se usa "VIN" como en el Excel para mantener similitud
+            }
+            for actividad in ACTIVIDADES_CARRIER:
+                row_status[actividad] = "✔" if (unit, actividad) in completed_set else ""
+            status_data.append(row_status)
+
+        df_status = pd.DataFrame(status_data)
+        
+        st.dataframe(
+            df_status,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "LOTE": "Lote",
+                "VIN": "Unidad (VIN)",
+            }
+        )
+        st.caption("✅ Marca las actividades completadas según las asignaciones finalizadas. Similar al dashboard del Excel proporcionado.")
+    else:
+        st.info("No hay unidades registradas aún.")
+
     if unid:
         df_u = pd.DataFrame(unid)
         st.markdown('<div class="section-title">Inventario de Series por Lote</div>', unsafe_allow_html=True)
@@ -298,16 +336,22 @@ elif menu == "🎯 Mis Tareas":
 elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">Solicitar Nueva Actividad</div>', unsafe_allow_html=True)
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
+    
+    # Leyenda informativa de seguridad (visible siempre)
+    st.info("🔒 **Restricción de seguridad:** Cada técnico solo puede tener **una asignación por unidad**. Si ya solicitaste o se te asignó esta unidad previamente, el sistema te avisará. Solo el administrador puede autorizar una segunda tarea en la misma unidad.")
+
     with st.form("solicitud_form"):
         u_sel = st.selectbox("Seleccionar Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
         a_sel = st.selectbox("Actividad a Realizar", ACTIVIDADES_CARRIER)
         if st.form_submit_button("Enviar Solicitud al Administrador", use_container_width=True):
             unidad = u_sel.split(" - ")[1]
-            # === RESTRICCIÓN INTEGRADA: Los técnicos NO pueden asignarse la misma unidad más de una vez ===
-            # Solo el administrador puede autorizar duplicados mediante asignación directa
-            existing = execute_read("SELECT id FROM asignaciones WHERE tecnico=%s AND unidad=%s", (st.session_state.user, unidad))
+            # === RESTRICCIÓN DE SEGURIDAD MEJORADA ===
+            # Ningún técnico puede asignarse la misma unidad más de una vez (a menos que el admin lo autorice)
+            existing = execute_read("SELECT id, estado FROM asignaciones WHERE tecnico=%s AND unidad=%s", (st.session_state.user, unidad))
             if existing:
-                st.error("❌ Ya tienes una asignación para esta unidad. Contacta al administrador para autorizar una nueva.")
+                estado_prev = existing[0]['estado']
+                st.error(f"❌ **Ya tienes una asignación previa para esta unidad ({unidad})**.\n"
+                         f"Estado anterior: **{estado_prev.upper()}**. Contacta al administrador para autorizar una nueva tarea.")
             else:
                 if execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'solicitado')", 
                                (unidad, a_sel, st.session_state.user)):

@@ -33,16 +33,14 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "Cargador de Batería"
 }
 
-# ==================== ACTIVIDADES ACTUALIZADAS (sincronizadas con el Excel real) ====================
-# Se agregaron las actividades faltantes del Excel ("Check de fugas", "Horas Corridas", "GPS", "Run")
-# y se ajustaron nombres para que coincidan exactamente con el dashboard del Excel.
-# No se eliminó ninguna actividad existente para no romper el sistema en vivo.
+# ==================== ACTIVIDADES ACTUALIZADAS Y HOMOLOGADAS ====================
+# "Vacíos" fue reemplazado por "Vacío" para coincidir exactamente con el Excel
 ACTIVIDADES_CARRIER = [
     "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
-    "Programación", "Soldadura en Sitio", "Vacíos", "Accesorios", 
+    "Programación", "Soldadura en Sitio", "Vacío", "Accesorios", 
     "Toma de Valores", "Evidencia", "Standby", "Toma de Series",
-    # === Actividades del Excel que faltaban ===
-    "Check de fugas", "Vacío", "Horas Corridas", "GPS", "Run"
+    # === Actividades del Excel ===
+    "Check de fugas", "Horas Corridas", "GPS", "Run"
 ]
 
 # --- ESTILOS CSS ---
@@ -61,9 +59,6 @@ st.markdown(f"""
     .time-badge {{ 
         background-color: {CARRIER_BLUE}; color: white; 
         padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; float: right; 
-    }}
-    .status-table {{ 
-        font-size: 0.95rem; 
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -116,7 +111,7 @@ if not st.session_state.login:
             if user:
                 st.session_state.update({
                     "login": True, 
-                    "user": user[0]['username'],   # Se guarda tal como está en BD
+                    "user": user[0]['username'],
                     "role": user[0]['role'].lower()
                 })
                 st.success(f"Bienvenido, {user[0]['username']}")
@@ -130,7 +125,7 @@ with st.sidebar:
     st.image(LOGO_URL, width=400)
     st.markdown(f"🕒 **Hora local:** {hora_actual}")
     st.markdown("---")
-    st.write(f"👤 **Usuario:** {st.session_state.user}")   # ← Respeta mayúsculas y minúsculas
+    st.write(f"👤 **Usuario:** {st.session_state.user}")
     st.write(f"🏢 **Sede:** Tijuana, B.C.")
     st.markdown("---")
     
@@ -192,11 +187,10 @@ if menu == "📊 Dashboard Ejecutivo":
         st.markdown('<div class="section-title">Historial Completo de Actividades</div>', unsafe_allow_html=True)
         st.dataframe(df_a, use_container_width=True, hide_index=True)
 
-    # ==================== ESTATUS DE PROCESO POR UNIDAD (100% sincronizado con el Excel) ====================
+    # ==================== ESTATUS DE PROCESO POR UNIDAD ====================
     st.markdown('<div class="section-title">📊 Estatus de Proceso por Unidad</div>', unsafe_allow_html=True)
     unidades = execute_read("SELECT id_lote, unit_number FROM unidades ORDER BY id_lote, unit_number")
     if unidades:
-        # Obtenemos todas las actividades completadas de una sola vez (eficiente y sincronizado con el sistema real)
         completadas_raw = execute_read("SELECT unidad, actividad_id FROM asignaciones WHERE estado = 'completada'")
         completed_set = {(row['unidad'], row['actividad_id']) for row in completadas_raw}
 
@@ -206,7 +200,7 @@ if menu == "📊 Dashboard Ejecutivo":
             lote = u['id_lote']
             row_status = {
                 "LOTE": lote,
-                "#económico": unit          # ← Cambiado según tu instrucción (ya no es VIN)
+                "#económico": unit
             }
             for actividad in ACTIVIDADES_CARRIER:
                 row_status[actividad] = "✔" if (unit, actividad) in completed_set else ""
@@ -220,10 +214,10 @@ if menu == "📊 Dashboard Ejecutivo":
             hide_index=True,
             column_config={
                 "LOTE": "Lote",
-                "#económico": "#económico",   # ← Nombre correcto
+                "#económico": "#económico",
             }
         )
-        st.caption("✅ Sistema totalmente sincronizado con tu base de datos real. Las marcas ✔ aparecen automáticamente cuando un técnico marca la actividad como completada.")
+        st.caption("✅ Sistema sincronizado en tiempo real con las actividades completadas.")
     else:
         st.info("No hay unidades registradas aún.")
 
@@ -282,8 +276,6 @@ elif menu == "🎯 Control de Asignaciones":
                 st.success(f"✅ Tarea asignada correctamente a **{t_sel}**")
                 st.rerun()
 
-    # ====================== NUEVA FUNCIONALIDAD INTEGRADA ======================
-    # Eliminar tareas seleccionadas por error de los técnicos (integrado en la parte de asignación)
     st.markdown('<div class="section-title">Eliminar Tareas Activas por Error del Técnico</div>', unsafe_allow_html=True)
     tareas_activas = execute_read("SELECT * FROM asignaciones WHERE estado IN ('pendiente', 'en_proceso')")
     if tareas_activas:
@@ -343,21 +335,17 @@ elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">Solicitar Nueva Actividad</div>', unsafe_allow_html=True)
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
     
-    # Leyenda informativa de seguridad (visible siempre)
-    st.info("🔒 **Restricción de seguridad:** Cada técnico solo puede tener **una asignación por unidad**. Si ya solicitaste o se te asignó esta unidad previamente, el sistema te avisará. Solo el administrador puede autorizar una segunda tarea en la misma unidad.")
+    st.info("🔒 **Restricción de seguridad:** Cada técnico solo puede tener **una asignación por unidad**. Solo el administrador puede autorizar más de una.")
 
     with st.form("solicitud_form"):
         u_sel = st.selectbox("Seleccionar Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
         a_sel = st.selectbox("Actividad a Realizar", ACTIVIDADES_CARRIER)
         if st.form_submit_button("Enviar Solicitud al Administrador", use_container_width=True):
             unidad = u_sel.split(" - ")[1]
-            # === RESTRICCIÓN DE SEGURIDAD MEJORADA ===
-            # Ningún técnico puede asignarse la misma unidad más de una vez (a menos que el admin lo autorice)
             existing = execute_read("SELECT id, estado FROM asignaciones WHERE tecnico=%s AND unidad=%s", (st.session_state.user, unidad))
             if existing:
                 estado_prev = existing[0]['estado']
-                st.error(f"❌ **Ya tienes una asignación previa para esta unidad ({unidad})**.\n"
-                         f"Estado anterior: **{estado_prev.upper()}**. Contacta al administrador para autorizar una nueva tarea.")
+                st.error(f"❌ Ya tienes una asignación previa para esta unidad ({unidad}) - Estado: **{estado_prev.upper()}**. Contacta al administrador.")
             else:
                 if execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'solicitado')", 
                                (unidad, a_sel, st.session_state.user)):
@@ -365,7 +353,7 @@ elif menu == "🔔 Nueva Solicitud":
                     st.toast("Esperando aprobación...", icon="⏳")
                     st.rerun()
 
-# ==================== OTRAS SECCIONES (Registro y Gestión de Usuarios) ====================
+# ==================== OTRAS SECCIONES ====================
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">Captura de Información Técnica</div>', unsafe_allow_html=True)
     with st.form("reg_unidades"):

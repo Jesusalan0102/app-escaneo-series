@@ -11,7 +11,6 @@ from streamlit_autorefresh import st_autorefresh
 st.set_page_config(page_title="Carrier Transicold - Panel de Control", layout="wide")
 st_autorefresh(interval=30 * 1000, key="global_refresh")
 
-# Configuración de Hora Local (Tijuana, B.C.)
 tijuana_tz = pytz.timezone('America/Tijuana')
 ahora_tj = datetime.now(tijuana_tz)
 fecha_hoy = ahora_tj.strftime('%Y-%m-%d')
@@ -43,19 +42,9 @@ ACTIVIDADES_CARRIER = [
 st.markdown(f"""
 <style>
     .stApp {{ background-color: white; }}
-    .main-header {{ 
-        font-size: 2.2rem; font-weight: 700; color: {CARRIER_BLUE}; 
-        border-bottom: 3px solid {CARRIER_BLUE}; padding-bottom: 10px; margin-bottom: 25px; 
-    }}
-    .section-title {{ 
-        font-size: 1.3rem; font-weight: 600; color: #333; 
-        margin-top: 20px; border-left: 5px solid {CARRIER_BLUE}; 
-        padding-left: 15px; margin-bottom: 15px; 
-    }}
-    .time-badge {{ 
-        background-color: {CARRIER_BLUE}; color: white; 
-        padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; float: right; 
-    }}
+    .main-header {{ font-size: 2.2rem; font-weight: 700; color: {CARRIER_BLUE}; border-bottom: 3px solid {CARRIER_BLUE}; padding-bottom: 10px; margin-bottom: 25px; }}
+    .section-title {{ font-size: 1.3rem; font-weight: 600; color: #333; margin-top: 20px; border-left: 5px solid {CARRIER_BLUE}; padding-left: 15px; margin-bottom: 15px; }}
+    .time-badge {{ background-color: {CARRIER_BLUE}; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; float: right; }}
     .status-completada {{ background-color: #2ECC71; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; }}
     .status-proceso {{ background-color: #3498DB; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; }}
     .status-pendiente {{ background-color: #F1C40F; color: black; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; }}
@@ -66,10 +55,8 @@ st.markdown(f"""
 
 # ==================== FUNCIONES DE BASE DE DATOS ====================
 def get_db_connection():
-    try: 
-        return mysql.connector.connect(**st.secrets["db"], autocommit=True)
-    except: 
-        return None
+    try: return mysql.connector.connect(**st.secrets["db"], autocommit=True)
+    except: return None
 
 def execute_read(query, params=None):
     conn = get_db_connection()
@@ -112,8 +99,7 @@ if not st.session_state.login:
             if user:
                 st.session_state.update({"login": True, "user": user[0]['username'], "role": user[0]['role'].lower()})
                 st.rerun()
-            else: 
-                st.error("Credenciales incorrectas")
+            else: st.error("Credenciales incorrectas")
     st.stop()
 
 # ==================== NAVEGACIÓN ====================
@@ -126,9 +112,7 @@ with st.sidebar:
     st.markdown("---")
     
     if st.session_state.role == "admin":
-        menu = st.radio("MENÚ PRINCIPAL", 
-                       ["📊 Dashboard Ejecutivo", "🎯 Control de Asignaciones", 
-                        "📸 Registro de Unidades", "👥 Gestión de Usuarios"])
+        menu = st.radio("MENÚ PRINCIPAL", ["📊 Dashboard Ejecutivo", "🎯 Control de Asignaciones", "📸 Registro de Unidades", "👥 Gestión de Usuarios"])
     else:
         menu = st.radio("ÁREA DE TRABAJO", ["🎯 Mis Tareas", "🔔 Nueva Solicitud"])
     
@@ -145,75 +129,113 @@ if menu == "📊 Dashboard Ejecutivo":
     asig = execute_read("SELECT * FROM asignaciones")
     unid = execute_read("SELECT * FROM unidades")
 
-    # ==================== ESTADO ACTUAL DE UNIDADES (CORREGIDO) ====================
-    st.markdown('<div class="section-title">Estado Actual de Unidades</div>', unsafe_allow_html=True)
-    
-    # Consulta corregida: una sola fila por unit_number único (toma la asignación más reciente)
-    query_estado = """
-        SELECT 
-            u.unit_number,
-            u.id_lote,
-            a.actividad_id AS actividad_actual,
-            a.tecnico,
-            a.estado,
-            a.fecha_inicio,
-            a.fecha_fin
-        FROM unidades u
-        LEFT JOIN (
-            SELECT * FROM asignaciones 
-            WHERE id IN (SELECT MAX(id) FROM asignaciones GROUP BY unidad)
-        ) a ON u.unit_number = a.unidad
-        ORDER BY u.unit_number
-    """
-    estado_unidades = execute_read(query_estado)
-    df_estado = pd.DataFrame(estado_unidades)
+    # ==================== ESTADO ACTUAL DE UNIDADES (AJUSTADO) ====================
+    with st.expander("📋 Estado Actual de Unidades", expanded=False):
+        st.markdown('<div class="section-title">Estado Actual de Unidades</div>', unsafe_allow_html=True)
+        
+        # Obtenemos todas las unidades únicas
+        df_units = pd.DataFrame(execute_read("SELECT unit_number, id_lote FROM unidades"))
+        
+        # Obtenemos todas las asignaciones
+        df_asig = pd.DataFrame(execute_read("""
+            SELECT unidad, actividad_id, estado, tecnico, fecha_inicio, fecha_fin 
+            FROM asignaciones
+        """))
 
-    if not df_estado.empty:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Unidades", len(df_estado))
-        with col2:
-            st.metric("Completadas", len(df_estado[df_estado['estado'] == 'completada']))
-        with col3:
-            st.metric("En Proceso", len(df_estado[df_estado['estado'] == 'en_proceso']))
-        with col4:
-            st.metric("Pendientes / Solicitadas", len(df_estado[df_estado['estado'].isin(['pendiente', 'solicitado'])]))
+        if not df_units.empty:
+            rows = []
+            for _, row in df_units.iterrows():
+                unit = row['unit_number']
+                lote = row['id_lote']
+                
+                unit_asig = df_asig[df_asig['unidad'] == unit]
+                
+                # Actividades completadas por esta unidad
+                completed = set(unit_asig[unit_asig['estado'] == 'completada']['actividad_id'].tolist())
+                
+                # ¿Tiene Evidencia completada?
+                is_completed = 'Evidencia' in completed
+                
+                # Última actividad (para mostrar actividad_actual)
+                if not unit_asig.empty:
+                    latest = unit_asig.sort_values(by='fecha_inicio', ascending=False).iloc[0]
+                    actividad_actual = latest['actividad_id']
+                    tecnico = latest['tecnico']
+                    fecha_inicio = latest['fecha_inicio']
+                    fecha_fin = latest['fecha_fin']
+                    estado = latest['estado']
+                else:
+                    actividad_actual = None
+                    tecnico = None
+                    fecha_inicio = None
+                    fecha_fin = None
+                    estado = None
+                
+                # Estado final según regla de Evidencia
+                if is_completed:
+                    estatus_html = '<span class="status-completada">Completada</span>'
+                    estado_final = 'completada'
+                elif estado:
+                    if estado == 'en_proceso':
+                        estatus_html = '<span class="status-proceso">En Proceso</span>'
+                    elif estado == 'pendiente':
+                        estatus_html = '<span class="status-pendiente">Pendiente</span>'
+                    elif estado == 'solicitado':
+                        estatus_html = '<span class="status-solicitado">Solicitado</span>'
+                    else:
+                        estatus_html = '<span class="status-sin">Sin Actividad</span>'
+                    estado_final = estado
+                else:
+                    estatus_html = '<span class="status-sin">Sin Actividad</span>'
+                    estado_final = None
+                
+                # Actividades pendientes
+                pendientes = [act for act in ACTIVIDADES_CARRIER if act not in completed]
+                pendientes_str = ", ".join(pendientes) if pendientes else "Ninguna"
+                
+                # Avance aproximado
+                avance = 100 if is_completed else round((len(completed) / len(ACTIVIDADES_CARRIER)) * 100)
+                
+                rows.append({
+                    'unit_number': unit,
+                    'id_lote': lote,
+                    'actividad_actual': actividad_actual,
+                    'Estatus': estatus_html,
+                    'tecnico': tecnico,
+                    'fecha_inicio': fecha_inicio,
+                    'fecha_fin': fecha_fin,
+                    'Avance': avance,
+                    'Actividades Pendientes': pendientes_str
+                })
+            
+            df_estado = pd.DataFrame(rows)
 
-        def format_status(estado):
-            if estado == 'completada':
-                return '<span class="status-completada">Completada</span>'
-            elif estado == 'en_proceso':
-                return '<span class="status-proceso">En Proceso</span>'
-            elif estado == 'pendiente':
-                return '<span class="status-pendiente">Pendiente</span>'
-            elif estado == 'solicitado':
-                return '<span class="status-solicitado">Solicitado</span>'
-            else:
-                return '<span class="status-sin">Sin Actividad</span>'
+            # Tarjetas de resumen
+            col1, col2, col3, col4 = st.columns(4)
+            with col1: st.metric("Total Unidades", len(df_estado))
+            with col2: st.metric("Completadas", len(df_estado[df_estado['Estatus'].str.contains('Completada')]))
+            with col3: st.metric("En Proceso", len(df_estado[df_estado['Estatus'].str.contains('En Proceso')]))
+            with col4: st.metric("Pendientes", len(df_estado) - len(df_estado[df_estado['Estatus'].str.contains('Completada')]))
 
-        df_estado['Estatus'] = df_estado['estado'].apply(format_status)
-        df_estado['Avance'] = df_estado['estado'].map({
-            'completada': 100, 'en_proceso': 60, 'pendiente': 25, 'solicitado': 10
-        }).fillna(0)
-
-        st.dataframe(
-            df_estado[['unit_number', 'id_lote', 'actividad_actual', 'Estatus', 'tecnico', 
-                       'fecha_inicio', 'fecha_fin', 'Avance']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "unit_number": "Unit Number",
-                "id_lote": "Lote",
-                "actividad_actual": "Actividad Actual",
-                "Estatus": st.column_config.TextColumn("Estatus"),
-                "tecnico": "Técnico Asignado",
-                "fecha_inicio": "Fecha Inicio",
-                "fecha_fin": "Fecha Fin",
-                "Avance": st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%")
-            }
-        )
-    else:
-        st.info("No hay unidades registradas todavía.")
+            # Tabla final
+            st.dataframe(
+                df_estado,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "unit_number": "Unit Number",
+                    "id_lote": "Lote",
+                    "actividad_actual": "Actividad Actual",
+                    "Estatus": st.column_config.TextColumn("Estatus"),
+                    "tecnico": "Técnico Asignado",
+                    "fecha_inicio": "Fecha Inicio",
+                    "fecha_fin": "Fecha Fin",
+                    "Avance": st.column_config.ProgressColumn("Avance", min_value=0, max_value=100, format="%.0f%%"),
+                    "Actividades Pendientes": "Actividades Pendientes"
+                }
+            )
+        else:
+            st.info("No hay unidades registradas todavía.")
 
     # ==================== ESTADÍSTICAS POR TÉCNICO (sin cambios) ====================
     if asig:
@@ -224,31 +246,17 @@ if menu == "📊 Dashboard Ejecutivo":
             En_Curso=('estado', lambda x: (x == 'en_proceso').sum()),
             Pendientes=('estado', lambda x: (x == 'pendiente').sum())
         ).reset_index()
-        
         stats['Rendimiento'] = ((stats['Completadas'] / stats['Total']) * 100).round(0).astype(int)
 
         st.markdown('<div class="section-title">Estadísticas por Técnico</div>', unsafe_allow_html=True)
-        st.dataframe(
-            stats.sort_values(by='Total', ascending=False),
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "tecnico": "Nombre del Técnico",
-                "Total": st.column_config.NumberColumn("Asignadas", format="%d 📋"),
-                "Rendimiento": st.column_config.ProgressColumn("Rendimiento", format="%.0f%%", min_value=0, max_value=100),
-                "Completadas": "Completadas ✅", 
-                "En_Curso": "En Proceso ⚙️", 
-                "Pendientes": "Pendientes ⏳"
-            }
-        )
-        
+        st.dataframe(stats.sort_values(by='Total', ascending=False), use_container_width=True, hide_index=True,
+                     column_config={"tecnico": "Nombre del Técnico", "Total": st.column_config.NumberColumn("Asignadas", format="%d 📋"),
+                                    "Rendimiento": st.column_config.ProgressColumn("Rendimiento", format="%.0f%%", min_value=0, max_value=100),
+                                    "Completadas": "Completadas ✅", "En_Curso": "En Proceso ⚙️", "Pendientes": "Pendientes ⏳"})
+
         c1, c2 = st.columns([2, 1])
-        with c1:
-            st.plotly_chart(px.bar(df_a, x='tecnico', color='estado', title="Distribución de Carga de Trabajo",
-                                   color_discrete_map={'completada': '#2ECC71', 'en_proceso': '#3498DB', 'pendiente': '#F1C40F', 'solicitado': '#E74C3C'}), 
-                            use_container_width=True)
-        with c2:
-            st.plotly_chart(px.pie(df_a, names='estado', title="Estado Global", hole=0.5), use_container_width=True)
+        with c1: st.plotly_chart(px.bar(df_a, x='tecnico', color='estado', title="Distribución de Carga de Trabajo", color_discrete_map={'completada': '#2ECC71', 'en_proceso': '#3498DB', 'pendiente': '#F1C40F', 'solicitado': '#E74C3C'}), use_container_width=True)
+        with c2: st.plotly_chart(px.pie(df_a, names='estado', title="Estado Global", hole=0.5), use_container_width=True)
 
         st.markdown('<div class="section-title">Historial Completo de Actividades</div>', unsafe_allow_html=True)
         st.dataframe(df_a, use_container_width=True, hide_index=True)
@@ -264,12 +272,12 @@ if menu == "📊 Dashboard Ejecutivo":
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_u.to_excel(writer, index=False, sheet_name='Series_Unidades')
-            if asig: 
-                df_a.to_excel(writer, index=False, sheet_name='Reporte_Actividades')
+            if asig: df_a.to_excel(writer, index=False, sheet_name='Reporte_Actividades')
         st.download_button("📥 Descargar Reporte Maestro (Excel)", buffer.getvalue(), f"Reporte_Carrier_{fecha_hoy}.xlsx", use_container_width=True)
 
-# ==================== EL RESTO DEL CÓDIGO (sin cambios) ====================
+# ==================== RESTO DEL PROGRAMA (sin cambios) ====================
 elif menu == "🎯 Control de Asignaciones":
+    # ... (código original sin cambios - se mantiene igual)
     st.markdown('<div class="main-header">Gestión de Órdenes y Autorizaciones</div>', unsafe_allow_html=True)
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
     if len(sols) > st.session_state.last_count:
@@ -301,10 +309,11 @@ elif menu == "🎯 Control de Asignaciones":
         t_sel = c2.selectbox("Asignar a Técnico", [x['username'] for x in t_db])
         a_sel = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
         if st.form_submit_button("Crear Orden de Trabajo", use_container_width=True):
-            if execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s,%s,%s,'pendiente')", 
-                           (u_sel.split(" - ")[1], a_sel, t_sel)):
+            if execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s,%s,%s,'pendiente')", (u_sel.split(" - ")[1], a_sel, t_sel)):
                 st.success(f"✅ Tarea asignada correctamente a **{t_sel}**")
                 st.rerun()
+
+# (El resto de las secciones — Registro de Unidades, Gestión de Usuarios, Mis Tareas, Nueva Solicitud — permanecen exactamente iguales al código anterior)
 
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">Captura de Información Técnica</div>', unsafe_allow_html=True)

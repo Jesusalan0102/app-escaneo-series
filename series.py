@@ -33,14 +33,26 @@ CAMPOS_SERIES = {
     "battery_charger_serial": "Cargador de Batería"
 }
 
-# ==================== ACTIVIDADES ACTUALIZADAS Y HOMOLOGADAS ====================
-# "Vacíos" fue reemplazado por "Vacío" para coincidir exactamente con el Excel
+# ==================== ACTIVIDADES HOMOLOGADAS CON EL EXCEL ====================
 ACTIVIDADES_CARRIER = [
-    "Cableado", "Cerrado", "Corriendo", "Inspección", "Pretrip", 
-    "Programación", "Soldadura en Sitio", "Vacío", "Accesorios", 
-    "Toma de Valores", "Evidencia", "Standby", "Toma de Series",
-    # === Actividades del Excel ===
-    "Check de fugas", "Horas Corridas", "GPS", "Run"
+    "Cableado", 
+    "Programación", 
+    "Soldadura", 
+    "Check de fugas", 
+    "Vacío", 
+    "Cerrado", 
+    "Pre-viaje",           # Homologado (Pretrip + Pre-viaje)
+    "Horas Corridas", 
+    "Standby", 
+    "GPS", 
+    "Run", 
+    # Actividades adicionales del sistema actual
+    "Corriendo", 
+    "Inspección", 
+    "Accesorios", 
+    "Toma de Valores", 
+    "Evidencia", 
+    "Toma de Series"
 ]
 
 # --- ESTILOS CSS ---
@@ -214,10 +226,10 @@ if menu == "📊 Dashboard Ejecutivo":
             hide_index=True,
             column_config={
                 "LOTE": "Lote",
-                "#económico": "#económico",
+                "#económico": "#económico"
             }
         )
-        st.caption("✅ Sistema sincronizado en tiempo real con las actividades completadas.")
+        st.caption("✅ Tabla totalmente sincronizada con tu Excel. Pre-viaje y Pretrip ya están homologados.")
     else:
         st.info("No hay unidades registradas aún.")
 

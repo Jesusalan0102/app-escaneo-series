@@ -238,6 +238,21 @@ elif menu == "🎯 Control de Asignaciones":
                 st.success(f"✅ Tarea asignada correctamente a **{t_sel}**")
                 st.rerun()
 
+    # ====================== NUEVA FUNCIONALIDAD INTEGRADA ======================
+    # Eliminar tareas seleccionadas por error de los técnicos (integrado en la parte de asignación)
+    st.markdown('<div class="section-title">Eliminar Tareas Activas por Error del Técnico</div>', unsafe_allow_html=True)
+    tareas_activas = execute_read("SELECT * FROM asignaciones WHERE estado IN ('pendiente', 'en_proceso')")
+    if tareas_activas:
+        for t in tareas_activas:
+            col_inf, col_elim = st.columns([4, 1])
+            col_inf.warning(f"**Técnico:** {t['tecnico']} | **Actividad:** {t['actividad_id']} | **Unidad:** {t['unidad']} | **Estado:** {t['estado']}")
+            if col_elim.button("🗑️ Eliminar Tarea", key=f"eliminar_{t['id']}", use_container_width=True):
+                if execute_write("DELETE FROM asignaciones WHERE id=%s", (t['id'],)):
+                    st.success(f"✅ Tarea de {t['tecnico']} eliminada correctamente por error")
+                    st.rerun()
+    else:
+        st.info("No hay tareas activas que eliminar en este momento.")
+
 # ==================== MIS TAREAS ====================
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">Panel de Actividades</div>', unsafe_allow_html=True)
@@ -287,11 +302,18 @@ elif menu == "🔔 Nueva Solicitud":
         u_sel = st.selectbox("Seleccionar Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
         a_sel = st.selectbox("Actividad a Realizar", ACTIVIDADES_CARRIER)
         if st.form_submit_button("Enviar Solicitud al Administrador", use_container_width=True):
-            if execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'solicitado')", 
-                           (u_sel.split(" - ")[1], a_sel, st.session_state.user)):
-                st.success("📨 Solicitud enviada correctamente al administrador")
-                st.toast("Esperando aprobación...", icon="⏳")
-                st.rerun()
+            unidad = u_sel.split(" - ")[1]
+            # === RESTRICCIÓN INTEGRADA: Los técnicos NO pueden asignarse la misma unidad más de una vez ===
+            # Solo el administrador puede autorizar duplicados mediante asignación directa
+            existing = execute_read("SELECT id FROM asignaciones WHERE tecnico=%s AND unidad=%s", (st.session_state.user, unidad))
+            if existing:
+                st.error("❌ Ya tienes una asignación para esta unidad. Contacta al administrador para autorizar una nueva.")
+            else:
+                if execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'solicitado')", 
+                               (unidad, a_sel, st.session_state.user)):
+                    st.success("📨 Solicitud enviada correctamente al administrador")
+                    st.toast("Esperando aprobación...", icon="⏳")
+                    st.rerun()
 
 # ==================== OTRAS SECCIONES (Registro y Gestión de Usuarios) ====================
 elif menu == "📸 Registro de Unidades":

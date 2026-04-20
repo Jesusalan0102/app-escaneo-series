@@ -145,9 +145,10 @@ if menu == "📊 Dashboard Ejecutivo":
     asig = execute_read("SELECT * FROM asignaciones")
     unid = execute_read("SELECT * FROM unidades")
 
-    # ==================== NUEVA SECCIÓN: ESTADO ACTUAL DE UNIDADES ====================
+    # ==================== ESTADO ACTUAL DE UNIDADES (CORREGIDO) ====================
     st.markdown('<div class="section-title">Estado Actual de Unidades</div>', unsafe_allow_html=True)
     
+    # Consulta corregida: una sola fila por unit_number único (toma la asignación más reciente)
     query_estado = """
         SELECT 
             u.unit_number,
@@ -158,7 +159,10 @@ if menu == "📊 Dashboard Ejecutivo":
             a.fecha_inicio,
             a.fecha_fin
         FROM unidades u
-        LEFT JOIN asignaciones a ON u.unit_number = a.unidad
+        LEFT JOIN (
+            SELECT * FROM asignaciones 
+            WHERE id IN (SELECT MAX(id) FROM asignaciones GROUP BY unidad)
+        ) a ON u.unit_number = a.unidad
         ORDER BY u.unit_number
     """
     estado_unidades = execute_read(query_estado)
@@ -173,8 +177,8 @@ if menu == "📊 Dashboard Ejecutivo":
         with col3:
             st.metric("En Proceso", len(df_estado[df_estado['estado'] == 'en_proceso']))
         with col4:
-            st.metric("Pendientes", len(df_estado[df_estado['estado'].isin(['pendiente', 'solicitado'])]))
-        
+            st.metric("Pendientes / Solicitadas", len(df_estado[df_estado['estado'].isin(['pendiente', 'solicitado'])]))
+
         def format_status(estado):
             if estado == 'completada':
                 return '<span class="status-completada">Completada</span>'
@@ -211,7 +215,7 @@ if menu == "📊 Dashboard Ejecutivo":
     else:
         st.info("No hay unidades registradas todavía.")
 
-    # ==================== ESTADÍSTICAS POR TÉCNICO (original) ====================
+    # ==================== ESTADÍSTICAS POR TÉCNICO (sin cambios) ====================
     if asig:
         df_a = pd.DataFrame(asig)
         stats = df_a.groupby('tecnico').agg(
@@ -264,7 +268,7 @@ if menu == "📊 Dashboard Ejecutivo":
                 df_a.to_excel(writer, index=False, sheet_name='Reporte_Actividades')
         st.download_button("📥 Descargar Reporte Maestro (Excel)", buffer.getvalue(), f"Reporte_Carrier_{fecha_hoy}.xlsx", use_container_width=True)
 
-# ==================== CONTROL DE ASIGNACIONES ====================
+# ==================== EL RESTO DEL CÓDIGO (sin cambios) ====================
 elif menu == "🎯 Control de Asignaciones":
     st.markdown('<div class="main-header">Gestión de Órdenes y Autorizaciones</div>', unsafe_allow_html=True)
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
@@ -302,7 +306,6 @@ elif menu == "🎯 Control de Asignaciones":
                 st.success(f"✅ Tarea asignada correctamente a **{t_sel}**")
                 st.rerun()
 
-# ==================== REGISTRO DE UNIDADES ====================
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">Captura de Información Técnica</div>', unsafe_allow_html=True)
     with st.form("reg_unidades"):
@@ -316,7 +319,6 @@ elif menu == "📸 Registro de Unidades":
                 st.success("✅ Registro guardado correctamente")
                 st.toast("Datos actualizados", icon="💾")
 
-# ==================== GESTIÓN DE USUARIOS ====================
 elif menu == "👥 Gestión de Usuarios":
     st.markdown('<div class="main-header">Administración de Usuarios</div>', unsafe_allow_html=True)
     col_u, col_l = st.columns([2, 1])
@@ -334,7 +336,6 @@ elif menu == "👥 Gestión de Usuarios":
         users_list = execute_read("SELECT username, role FROM users")
         st.table(users_list)
 
-# ==================== MIS TAREAS ====================
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">Panel de Actividades</div>', unsafe_allow_html=True)
     pendientes = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado='pendiente'", (st.session_state.user,))
@@ -374,7 +375,6 @@ elif menu == "🎯 Mis Tareas":
                             st.balloons()
                             st.rerun()
 
-# ==================== NUEVA SOLICITUD ====================
 elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">Solicitar Nueva Actividad</div>', unsafe_allow_html=True)
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")

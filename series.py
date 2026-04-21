@@ -46,7 +46,6 @@ ACTIVIDADES_CARRIER = [
     "Standby", 
     "GPS", 
     "Run", 
-    # Actividades adicionales del sistema actual
     "Corriendo", 
     "Inspección", 
     "Accesorios", 
@@ -262,8 +261,20 @@ elif menu == "🎯 Control de Asignaciones":
     if sols:
         st.markdown('<div class="section-title">Solicitudes por Aprobar</div>', unsafe_allow_html=True)
         for s in sols:
+            # --- MEJORA DE DUPLICIDAD ---
+            # Buscamos si existe la misma actividad para la misma unidad ya asignada a otro técnico
+            duplicado = execute_read(
+                "SELECT tecnico, estado FROM asignaciones WHERE unidad=%s AND actividad_id=%s AND estado IN ('pendiente', 'en_proceso', 'completada') AND tecnico != %s", 
+                (s['unidad'], s['actividad_id'], s['tecnico'])
+            )
+            
             col_inf, col_ap, col_den = st.columns([4, 1, 1])
-            col_inf.warning(f"**Técnico:** {s['tecnico']} | **Actividad:** {s['actividad_id']} | **Unidad:** {s['unidad']}")
+            
+            with col_inf:
+                st.warning(f"**Técnico:** {s['tecnico']} | **Actividad:** {s['actividad_id']} | **Unidad:** {s['unidad']}")
+                if duplicado:
+                    st.error(f"⚠️ **AVISO DE DUPLICIDAD:** Esta tarea ya está asignada o terminada por **{duplicado[0]['tecnico']}** (Estado: {duplicado[0]['estado'].upper()}).")
+            
             if col_ap.button("✅ Aprobar", key=f"ap_{s['id']}", use_container_width=True):
                 if execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (s['id'],)):
                     st.success(f"✅ Solicitud de {s['tecnico']} aprobada correctamente")

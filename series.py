@@ -19,7 +19,6 @@ hora_actual = ahora_tj.strftime('%H:%M:%S')
 
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
-SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
     "vin_number": "VIN Number", "reefer_serial": "Serie del Reefer",
@@ -42,6 +41,7 @@ st.markdown(f"""
     .main-header {{ font-size: 2.2rem; font-weight: 700; color: {CARRIER_BLUE}; border-bottom: 3px solid {CARRIER_BLUE}; padding-bottom: 10px; margin-bottom: 25px; }}
     .section-title {{ font-size: 1.3rem; font-weight: 600; color: #333; margin-top: 20px; border-left: 5px solid {CARRIER_BLUE}; padding-left: 15px; margin-bottom: 15px; }}
     .time-badge {{ background-color: {CARRIER_BLUE}; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; float: right; }}
+    .count-badge {{ background-color: #e1e4e8; color: #002B5B; padding: 2px 8px; border-radius: 10px; font-weight: bold; font-size: 0.85rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -125,6 +125,54 @@ if menu == "📊 Dashboard Ejecutivo":
             status_list.append(row)
         st.dataframe(pd.DataFrame(status_list), use_container_width=True, hide_index=True)
 
+    # --- CENTRO DE DESCARGAS (CON CONTADOR DE FOTOS) ---
+    st.markdown('<div class="section-title">📥 Centro de Descargas</div>', unsafe_allow_html=True)
+    col_d1, col_d2 = st.columns(2)
+    
+    with col_d1:
+        st.subheader("Reporte Maestro Excel")
+        if unid:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine='openpyxl') as wr:
+                pd.DataFrame(unid).to_excel(wr, index=False, sheet_name='Series_Unidades')
+                if asig: pd.DataFrame(asig).to_excel(wr, index=False, sheet_name='Actividades')
+            st.download_button("📊 Descargar Excel Maestro", buf.getvalue(), f"Reporte_{fecha_hoy}.xlsx", use_container_width=True)
+
+    with col_d2:
+        st.subheader("Evidencias Fotográficas")
+        if unid:
+            # Obtener el conteo de fotos por unidad desde la DB
+            conteo_fotos = execute_read("SELECT unit_number, COUNT(*) as total FROM evidencias GROUP BY unit_number")
+            dict_conteo = {r['unit_number']: r['total'] for r in conteo_fotos}
+            
+            # Crear lista para el selectbox con formato: "Unidad (X fotos)"
+            opciones_fotos = []
+            for u in unid:
+                num = u['unit_number']
+                total = dict_conteo.get(num, 0)
+                opciones_fotos.append({"label": f"{num} ({total} fotos)", "value": num, "count": total})
+            
+            sel_foto = st.selectbox(
+                "Seleccionar Unidad:", 
+                options=[o['value'] for o in opciones_fotos],
+                format_func=lambda x: next(o['label'] for o in opciones_fotos if o['value'] == x)
+            )
+            
+            # Obtener el conteo de la unidad seleccionada para validación
+            fotos_actuales = next(o['count'] for o in opciones_fotos if o['value'] == sel_foto)
+            
+            if st.button(f"Generar ZIP ({fotos_actuales} archivos)", use_container_width=True, disabled=(fotos_actuales == 0)):
+                ev_data = execute_read("SELECT nombre_archivo, contenido FROM evidencias WHERE unit_number = %s", (sel_foto,))
+                if ev_data:
+                    bz = io.BytesIO()
+                    with zipfile.ZipFile(bz, "a", zipfile.ZIP_DEFLATED, False) as z:
+                        for f in ev_data:
+                            z.writestr(f['nombre_archivo'], f['contenido'])
+                    st.download_button(f"📥 Descargar ZIP {sel_foto}", bz.getvalue(), f"{sel_foto}_fotos.zip", use_container_width=True)
+            
+            if fotos_actuales == 0:
+                st.caption("⚠️ Esta unidad no tiene fotos cargadas aún.")
+
     # --- VISTA PREVIA DE SERIES POR LOTE ---
     st.markdown('<div class="section-title">📦 Inventario de Series por Lote</div>', unsafe_allow_html=True)
     if unid:
@@ -132,28 +180,6 @@ if menu == "📊 Dashboard Ejecutivo":
         for lote in sorted(df_u['id_lote'].unique()):
             with st.expander(f"Lote: {lote}"):
                 st.table(df_u[df_u['id_lote']==lote][['unit_number'] + list(CAMPOS_SERIES.keys())])
-
-    # --- CENTRO DE DESCARGAS ---
-    st.markdown('<div class="section-title">📥 Centro de Descargas</div>', unsafe_allow_html=True)
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        if unid:
-            buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine='openpyxl') as wr:
-                pd.DataFrame(unid).to_excel(wr, index=False, sheet_name='Series_Unidades')
-                if asig: pd.DataFrame(asig).to_excel(wr, index=False, sheet_name='Actividades')
-            st.download_button("📊 Descargar Excel Maestro", buf.getvalue(), f"Reporte_{fecha_hoy}.xlsx", use_container_width=True)
-    with col_d2:
-        if unid:
-            u_sel = st.selectbox("Unidad para descargar ZIP de fotos:", [u['unit_number'] for u in unid])
-            if st.button(f"Generar ZIP {u_sel}", use_container_width=True):
-                fotos = execute_read("SELECT nombre_archivo, contenido FROM evidencias WHERE unit_number=%s", (u_sel,))
-                if fotos:
-                    bz = io.BytesIO()
-                    with zipfile.ZipFile(bz, "a", zipfile.ZIP_DEFLATED, False) as z:
-                        for f in fotos: z.writestr(f['nombre_archivo'], f['contenido'])
-                    st.download_button(f"Bajar {u_sel}.zip", bz.getvalue(), f"{u_sel}_fotos.zip", use_container_width=True)
-                else: st.info("No hay fotos para esta unidad.")
 
 # ==================== CONTROL DE ASIGNACIONES ====================
 elif menu == "🎯 Control de Asignaciones":
@@ -164,8 +190,6 @@ elif menu == "🎯 Control de Asignaciones":
             col_i, col_a, col_d = st.columns([4, 1, 1])
             with col_i:
                 st.warning(f"**{s['tecnico']}** solicita **{s['actividad_id']}** - {s['unidad']}")
-                dup = execute_read("SELECT tecnico FROM asignaciones WHERE unidad=%s AND actividad_id=%s AND estado='completada'", (s['unidad'], s['actividad_id']))
-                if dup: st.error(f"⚠️ YA COMPLETADO POR {dup[0]['tecnico']}")
             if col_a.button("✅ Aprobar", key=f"ap_{s['id']}"):
                 execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (s['id'],)); st.rerun()
             if col_d.button("❌ Denegar", key=f"de_{s['id']}"):
@@ -183,39 +207,24 @@ elif menu == "🎯 Control de Asignaciones":
             execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s,%s,%s,'pendiente')", (un_s.split(" - ")[1], ac_s, te_s))
             st.success("Asignado correctamente")
 
-# ==================== GESTIÓN DE USUARIOS (MEJORADO) ====================
+# ==================== GESTIÓN DE USUARIOS ====================
 elif menu == "👥 Gestión de Usuarios":
-    st.markdown('<div class="main-header">Administración de Personal</div>', unsafe_allow_html=True)
-    
-    # 1. Visualización de usuarios existentes
-    st.markdown('<div class="section-title">Lista de Usuarios Registrados</div>', unsafe_allow_html=True)
-    users_list = execute_read("SELECT id, username, role FROM users")
-    if users_list:
-        df_users = pd.DataFrame(users_list)
-        # Formateo visual
-        df_users['role'] = df_users['role'].str.upper()
-        
-        for index, row in df_users.iterrows():
-            c_u, c_r, c_b = st.columns([3, 2, 1])
-            c_u.write(f"👤 **{row['username']}**")
-            c_r.info(f"Rol: {row['role']}")
-            if c_b.button("Eliminar", key=f"del_u_{row['id']}"):
-                execute_write("DELETE FROM users WHERE id=%s", (row['id'],))
-                st.rerun()
+    st.markdown('<div class="main-header">Administración de Usuarios</div>', unsafe_allow_html=True)
+    u_list = execute_read("SELECT id, username, role FROM users")
+    if u_list:
+        for row in u_list:
+            c1, c2, c3 = st.columns([3, 2, 1])
+            c1.write(f"👤 **{row['username']}**")
+            c2.info(f"Rol: {row['role'].upper()}")
+            if c3.button("Eliminar", key=f"del_u_{row['id']}"):
+                execute_write("DELETE FROM users WHERE id=%s", (row['id'],)); st.rerun()
             st.divider()
 
-    # 2. Formulario de creación
-    st.markdown('<div class="section-title">Registrar Nuevo Usuario</div>', unsafe_allow_html=True)
-    with st.form("new_user"):
-        nu = st.text_input("Nombre de Usuario")
-        np = st.text_input("Contraseña", type="password")
-        nr = st.selectbox("Rol del Sistema", ["tecnico", "admin"])
-        if st.form_submit_button("Crear Usuario", use_container_width=True):
-            if nu and np:
-                execute_write("INSERT INTO users (username, password, role) VALUES (%s,%s,%s)", (nu.strip(), np.strip(), nr))
-                st.success(f"Usuario {nu} creado correctamente")
-                st.rerun()
-            else: st.error("Llenar todos los campos")
+    with st.form("new_u"):
+        st.write("Registrar Nuevo")
+        nu = st.text_input("Usuario"); np = st.text_input("Pass", type="password"); nr = st.selectbox("Rol", ["tecnico", "admin"])
+        if st.form_submit_button("Crear Usuario"):
+            execute_write("INSERT INTO users (username, password, role) VALUES (%s,%s,%s)", (nu, np, nr)); st.rerun()
 
 # ==================== MIS TAREAS (TÉCNICO) ====================
 elif menu == "🎯 Mis Tareas":

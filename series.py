@@ -19,7 +19,6 @@ hora_actual = ahora_tj.strftime('%H:%M:%S')
 
 CARRIER_BLUE = "#002B5B"
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
-SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
     "vin_number": "VIN Number", "reefer_serial": "Serie del Reefer",
@@ -89,149 +88,169 @@ if not st.session_state.login:
             else: st.error("Acceso denegado")
     st.stop()
 
-# ==================== SIDEBAR ====================
+# ==================== NAVEGACIÓN ====================
 with st.sidebar:
     st.image(LOGO_URL, width=300)
-    st.write(f"👤 {st.session_state.user} ({st.session_state.role})")
+    st.write(f"👤 {st.session_state.user} | {hora_actual}")
     st.divider()
     if st.session_state.role == "admin":
-        menu = st.radio("PANEL CONTROL", ["📊 Dashboard", "🎯 Asignaciones", "📸 Registro Maestro", "👥 Usuarios"])
+        menu = st.radio("MENÚ", ["📊 Dashboard", "🎯 Asignaciones", "📸 Registro Maestro", "👥 Usuarios"])
     else:
         menu = st.radio("TRABAJO", ["🎯 Mis Tareas", "🔔 Nueva Solicitud"])
-    if st.button("Cerrar Sesión"): st.session_state.clear(); st.rerun()
+    if st.button("Salir"): st.session_state.clear(); st.rerun()
 
-# ==================== DASHBOARD (RESTAURADO) ====================
+# ==================== DASHBOARD (CON TODAS LAS DESCARGAS) ====================
 if menu == "📊 Dashboard":
-    st.markdown('<div class="main-header">Resumen Operativo</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Panel de Control General</div>', unsafe_allow_html=True)
+    
     unid = execute_read("SELECT * FROM unidades")
     asig = execute_read("SELECT * FROM asignaciones")
-    fotos_count = execute_read("SELECT unit_number, COUNT(*) as total FROM evidencias GROUP BY unit_number")
-    f_dict = {r['unit_number']: r['total'] for r in fotos_count}
+    f_count = execute_read("SELECT unit_number, COUNT(*) as total FROM evidencias GROUP BY unit_number")
+    f_dict = {r['unit_number']: r['total'] for r in f_count}
 
-    if asig:
-        df_asig = pd.DataFrame(asig)
-        st.plotly_chart(px.bar(df_asig, x='tecnico', color='estado', title="Estado de Tareas"), use_container_width=True)
+    # --- SECCIÓN DE DESCARGAS (INTEGRADA) ---
+    st.markdown('<div class="section-title">📥 Centro de Descargas y Reportes</div>', unsafe_allow_html=True)
+    col_d1, col_d2 = st.columns(2)
+    
+    with col_d1:
+        st.subheader("📊 Reporte Maestro Excel")
+        if unid:
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine='openpyxl') as wr:
+                pd.DataFrame(unid).to_excel(wr, index=False, sheet_name='Series_Unidades')
+                if asig: pd.DataFrame(asig).to_excel(wr, index=False, sheet_name='Actividades_Tecnicos')
+            st.download_button("Descargar Reporte .xlsx", buf.getvalue(), f"Reporte_Carrier_{fecha_hoy}.xlsx", use_container_width=True)
 
-    st.markdown('<div class="section-title">Matriz de Proceso y Evidencias</div>', unsafe_allow_html=True)
+    with col_d2:
+        st.subheader("📸 Descarga de Fotos (ZIP)")
+        if unid:
+            # Selector con contador de fotos
+            opciones = [f"{u['unit_number']} ({f_dict.get(u['unit_number'], 0)} fotos)" for u in unid]
+            sel_raw = st.selectbox("Seleccionar unidad para ZIP:", opciones)
+            u_sel = sel_raw.split(" (")[0]
+            num_fotos = f_dict.get(u_sel, 0)
+            
+            if st.button(f"Generar ZIP {u_sel}", disabled=(num_fotos == 0), use_container_width=True):
+                ev_data = execute_read("SELECT nombre_archivo, contenido FROM evidencias WHERE unit_number=%s", (u_sel,))
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zf:
+                    for foto in ev_data:
+                        zf.writestr(foto['nombre_archivo'], foto['contenido'])
+                st.download_button(f"📥 Bajar ZIP de {u_sel}", zip_buffer.getvalue(), f"{u_sel}_evidencias.zip", use_container_width=True)
+
+    # --- MATRIZ DE ESTATUS ---
+    st.markdown('<div class="section-title">📊 Matriz de Avance por Unidad</div>', unsafe_allow_html=True)
     if unid:
         comp_set = {(r['unidad'], r['actividad_id']) for r in asig if r['estado'] == 'completada'}
-        res_data = []
+        res_list = []
         for u in unid:
-            row = {"LOTE": u['id_lote'], "UNIDAD": u['unit_number'], "📸 FOTOS": f_dict.get(u['unit_number'], 0)}
+            row = {"LOTE": u['id_lote'], "UNIDAD": u['unit_number'], "📸": f_dict.get(u['unit_number'], 0)}
             for act in ACTIVIDADES_CARRIER:
                 row[act] = "✔" if (u['unit_number'], act) in comp_set else ""
-            res_data.append(row)
-        st.dataframe(pd.DataFrame(res_data), use_container_width=True, hide_index=True)
+            res_list.append(row)
+        st.dataframe(pd.DataFrame(res_list), use_container_width=True, hide_index=True)
 
-    st.markdown('<div class="section-title">📦 Inventario de Series por Lote</div>', unsafe_allow_html=True)
+    # --- VISTA PREVIA DE SERIES ---
+    st.markdown('<div class="section-title">📦 Series Registradas por Lote</div>', unsafe_allow_html=True)
     if unid:
         df_u = pd.DataFrame(unid)
         for lote in sorted(df_u['id_lote'].unique()):
-            with st.expander(f"Lote: {lote}"):
+            with st.expander(f"Ver Lote: {lote}"):
                 st.table(df_u[df_u['id_lote']==lote][['unit_number'] + list(CAMPOS_SERIES.keys())])
 
 # ==================== ASIGNACIONES (RESTAURADO) ====================
 elif menu == "🎯 Asignaciones":
-    st.markdown('<div class="main-header">Gestión de Tareas</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Control de Tareas</div>', unsafe_allow_html=True)
     
-    # 1. Autorización de Solicitudes
+    # 1. Autorizaciones
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
     if sols:
-        st.subheader("Solicitudes del Personal")
+        st.subheader("Pendientes de Aprobación")
         for s in sols:
-            col_t, col_a, col_d = st.columns([4, 1, 1])
-            with col_t:
-                st.info(f"**{s['tecnico']}** -> {s['actividad_id']} en {s['unidad']}")
-                if execute_read("SELECT id FROM asignaciones WHERE unidad=%s AND actividad_id=%s AND estado='completada'", (s['unidad'], s['actividad_id'])):
-                    st.error("⚠️ Ya fue completada anteriormente")
-            if col_a.button("Autorizar", key=f"aut_{s['id']}"):
+            c_t, c_a, c_r = st.columns([4, 1, 1])
+            c_t.warning(f"**{s['tecnico']}** solicita: {s['actividad_id']} en {s['unidad']}")
+            if c_a.button("✅ Aprobar", key=f"ap_{s['id']}"):
                 execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (s['id'],))
-                st.toast("Tarea autorizada", icon="✅"); st.rerun()
-            if col_d.button("Borrar", key=f"del_{s['id']}"):
-                execute_write("DELETE FROM asignaciones WHERE id=%s", (s['id'],))
-                st.rerun()
+                st.toast("Tarea aprobada", icon="✅"); st.rerun()
+            if c_r.button("❌ Denegar", key=f"re_{s['id']}"):
+                execute_write("DELETE FROM asignaciones WHERE id=%s", (s['id'],)); st.rerun()
 
-    # 2. Asignación Directa y Corrección
-    st.markdown('<div class="section-title">Asignación Directa / Eliminar Tareas Activas</div>', unsafe_allow_html=True)
+    # 2. Asignación Directa
+    st.markdown('<div class="section-title">Asignación Manual</div>', unsafe_allow_html=True)
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
     t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
-    
-    with st.form("manual_assign"):
+    with st.form("manual"):
         c1, c2, c3 = st.columns(3)
-        u_sel = c1.selectbox("Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
-        te_sel = c2.selectbox("Técnico", [x['username'] for x in t_db])
-        ac_sel = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
-        if st.form_submit_button("Asignar Tarea"):
+        u_s = c1.selectbox("Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
+        t_s = c2.selectbox("Técnico", [x['username'] for x in t_db])
+        a_s = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
+        if st.form_submit_button("Asignar Ahora"):
             execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s,%s,%s,'pendiente')", 
-                         (u_sel.split(" - ")[1], ac_sel, te_sel))
-            st.toast("Asignación exitosa"); st.rerun()
+                         (u_s.split(" - ")[1], a_s, t_s))
+            st.toast("Asignado correctamente", icon="🎯"); st.rerun()
 
-# ==================== MIS TAREAS (CAMARA TIPO WHATSAPP) ====================
+# ==================== MIS TAREAS (CAMARA MULTIPLE) ====================
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">Mis Actividades</div>', unsafe_allow_html=True)
     tareas = execute_read("SELECT * FROM asignaciones WHERE tecnico=%s AND estado IN ('pendiente', 'en_proceso')", (st.session_state.user,))
-    
     for t in tareas:
         with st.expander(f"📦 {t['unidad']} - {t['actividad_id']}", expanded=True):
             if t['estado'] == 'pendiente':
-                if st.button("▶️ Iniciar", key=f"ini_{t['id']}", use_container_width=True):
+                if st.button("▶️ Iniciar", key=f"st_{t['id']}", use_container_width=True):
                     execute_write("UPDATE asignaciones SET estado='en_proceso', fecha_inicio=%s WHERE id=%s", (datetime.now(tijuana_tz), t['id']))
                     st.rerun()
             else:
                 if t['actividad_id'].lower() == "evidencia":
-                    st.write("📸 Captura de Fotos (Puedes seleccionar o tomar varias)")
-                    # La opción accept_multiple_files=True es clave para el flujo tipo WhatsApp
-                    fotos = st.file_uploader("Cámara / Galería", type=['jpg','jpeg','png'], accept_multiple_files=True, key=f"cam_{t['id']}")
-                    if st.button("Finalizar Actividad y Guardar Todo", key=f"save_{t['id']}"):
-                        if fotos:
-                            p = st.progress(0)
-                            for i, f in enumerate(fotos):
+                    archivos = st.file_uploader("Capturar Fotos (Tipo WhatsApp)", accept_multiple_files=True, type=['jpg','png','jpeg'], key=f"cam_{t['id']}")
+                    if st.button("Guardar y Finalizar", key=f"btn_{t['id']}"):
+                        if archivos:
+                            prog = st.progress(0)
+                            for i, f in enumerate(archivos):
                                 execute_write("INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico) VALUES (%s,%s,%s,%s)", (t['unidad'], f.name, f.read(), st.session_state.user))
-                                p.progress((i+1)/len(fotos))
+                                prog.progress((i+1)/len(archivos))
                             execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s", (datetime.now(tijuana_tz), t['id']))
-                            st.toast("¡Evidencias subidas con éxito!", icon="📸"); st.rerun()
-                
+                            st.toast("Evidencias cargadas", icon="📸"); st.rerun()
                 elif t['actividad_id'].lower() == "toma de series":
                     with st.form(f"ser_{t['id']}"):
                         res = {k: st.text_input(v) for k, v in CAMPOS_SERIES.items()}
-                        if st.form_submit_button("Guardar y Finalizar"):
+                        if st.form_submit_button("Guardar Series"):
                             q = ", ".join([f"{k}=%s" for k in res.keys()])
                             execute_write(f"UPDATE unidades SET {q} WHERE unit_number=%s", list(res.values()) + [t['unidad']])
                             execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s", (datetime.now(tijuana_tz), t['id']))
-                            st.toast("Series registradas", icon="💾"); st.rerun()
+                            st.toast("Series guardadas", icon="💾"); st.rerun()
                 else:
-                    if st.button("✅ Finalizar Actividad", key=f"fin_{t['id']}", use_container_width=True):
+                    if st.button("✅ Finalizar", key=f"fin_{t['id']}"):
                         execute_write("UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s", (datetime.now(tijuana_tz), t['id']))
-                        st.toast("Actividad guardada"); st.rerun()
+                        st.toast("Actividad completada"); st.rerun()
 
-# ==================== REGISTRO MAESTRO (RESTAURADO) ====================
+# ==================== REGISTRO MAESTRO ====================
 elif menu == "📸 Registro Maestro":
-    st.markdown('<div class="main-header">Control de Unidades</div>', unsafe_allow_html=True)
-    with st.form("reg_unid"):
+    st.markdown('<div class="main-header">Registro de Unidades</div>', unsafe_allow_html=True)
+    with st.form("reg"):
         c1, c2 = st.columns(2)
-        u_num = c1.text_input("Número Económico")
-        l_num = c1.text_input("Lote")
+        u_n = c1.text_input("Económico")
+        l_n = c1.text_input("Lote")
         campo = c2.selectbox("Campo", list(CAMPOS_SERIES.keys()), format_func=lambda x: CAMPOS_SERIES[x])
-        valor = c2.text_input("Valor del Serial")
-        if st.form_submit_button("Guardar Registro", use_container_width=True):
-            if execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_num, l_num, valor, l_num, valor)):
-                st.toast("Unidad actualizada", icon="💾")
+        val = c2.text_input("Valor")
+        if st.form_submit_button("Guardar Datos"):
+            execute_write(f"INSERT INTO unidades (unit_number, id_lote, {campo}) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE id_lote=%s, {campo}=%s", (u_n, l_n, val, l_n, val))
+            st.toast("Registro actualizado", icon="💾")
 
-# ==================== GESTIÓN DE USUARIOS (RESTAURADO) ====================
+# ==================== GESTIÓN DE USUARIOS ====================
 elif menu == "👥 Usuarios":
-    st.markdown('<div class="main-header">Administración de Usuarios</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Personal</div>', unsafe_allow_html=True)
     u_list = execute_read("SELECT id, username, role FROM users")
     if u_list:
         for u in u_list:
             c1, c2, c3 = st.columns([3,2,1])
             c1.write(f"👤 **{u['username']}**")
             c2.info(f"ROL: {u['role'].upper()}")
-            if c3.button("Borrar", key=f"du_{u['id']}"):
+            if c3.button("Eliminar", key=f"del_{u['id']}"):
                 execute_write("DELETE FROM users WHERE id=%s", (u['id'],)); st.rerun()
             st.divider()
     
-    with st.form("add_user"):
-        n_u = st.text_input("Nuevo Usuario")
+    with st.form("new_user"):
+        n_u = st.text_input("Usuario")
         n_p = st.text_input("Pass", type="password")
         n_r = st.selectbox("Rol", ["tecnico", "admin"])
         if st.form_submit_button("Crear"):
@@ -240,11 +259,11 @@ elif menu == "👥 Usuarios":
 
 # ==================== NUEVA SOLICITUD ====================
 elif menu == "🔔 Nueva Solicitud":
-    st.markdown('<div class="main-header">Solicitar Actividad</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Solicitar Tarea</div>', unsafe_allow_html=True)
     unids = execute_read("SELECT unit_number, id_lote FROM unidades")
-    with st.form("new_sol"):
+    with st.form("sol"):
         u = st.selectbox("Unidad", [f"{x['id_lote']} - {x['unit_number']}" for x in unids])
         a = st.selectbox("Actividad", ACTIVIDADES_CARRIER)
-        if st.form_submit_button("Enviar Solicitud"):
+        if st.form_submit_button("Enviar"):
             execute_write("INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) VALUES (%s, %s, %s, 'solicitado')", (u.split(" - ")[1], a, st.session_state.user))
-            st.toast("Enviado al administrador", icon="🔔"); st.rerun()
+            st.toast("Solicitud enviada al Administrador", icon="🔔"); st.rerun()

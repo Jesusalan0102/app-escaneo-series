@@ -131,11 +131,34 @@ div[data-testid="stExpander"] {{
     box-shadow: 0 4px 12px rgba(0,43,91,0.18);
 }}
 
-/* ── Uploader / Cámara ── */
-div[data-testid="stFileUploader"],
-div[data-testid="stCameraInput"] {{
+/* ── Uploader ── */
+div[data-testid="stFileUploader"] {{
     background: white; border-radius: 10px;
     border: 2px dashed #c3cfe2; padding: 8px;
+}}
+
+/* ── Alerta de bloqueo ── */
+.bloqueo-card {{
+    background: #fef2f2; border: 1.5px solid #fca5a5;
+    border-left: 5px solid #dc2626; border-radius: 10px;
+    padding: 14px 18px; margin: 8px 0;
+}}
+.bloqueo-card p {{ margin: 0; color: #7f1d1d; font-size: .9rem; font-weight: 500; }}
+
+/* ── Info de evidencia ── */
+.evidencia-info {{
+    background: #eff6ff; border: 1px solid #bfdbfe;
+    border-left: 5px solid #3b82f6; border-radius: 10px;
+    padding: 12px 18px; margin-bottom: 14px;
+}}
+.evidencia-info p {{ margin: 0; color: #1e40af; font-size: .88rem; }}
+
+/* ── Fotos counter badge ── */
+.fotos-badge {{
+    display: inline-block; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 20px;
+    padding: 4px 14px; font-size: .85rem;
+    color: #166534; font-weight: 600; margin-top: 10px;
 }}
 
 /* ── Formularios ── */
@@ -411,26 +434,66 @@ elif menu == "🎯 Control de Asignaciones":
     if not sols:
         st.success("✅ Sin solicitudes pendientes de aprobar.")
     else:
-        st.markdown('<div class="section-title">🔔 Solicitudes Nuevas</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="section-title">🔔 Solicitudes Pendientes de Aprobación ({len(sols)})</div>',
+            unsafe_allow_html=True,
+        )
         for s in sols:
-            col_inf, col_ap, col_den = st.columns([4, 1, 1])
-            with col_inf:
-                st.warning(
-                    f"**{s['tecnico']}** solicita **{s['actividad_id']}** — Unidad: **{s['unidad']}**"
-                )
-                dup = execute_read(
-                    "SELECT tecnico FROM asignaciones "
-                    "WHERE unidad=%s AND actividad_id=%s AND estado='completada'",
-                    (s["unidad"], s["actividad_id"]),
-                )
-                if dup:
-                    st.error(f"⚠️ Ya completado por {dup[0]['tecnico']}")
-            if col_ap.button("✅ Aprobar", key=f"ap_{s['id']}"):
-                execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (s["id"],))
-                st.rerun()
-            if col_den.button("❌ Borrar", key=f"de_{s['id']}"):
-                execute_write("DELETE FROM asignaciones WHERE id=%s", (s["id"],))
-                st.rerun()
+            # Verificar si ya existe completada o activa (otro técnico)
+            dup_comp = execute_read(
+                "SELECT tecnico FROM asignaciones "
+                "WHERE unidad=%s AND actividad_id=%s AND estado='completada'",
+                (s["unidad"], s["actividad_id"]),
+            )
+            dup_activa = execute_read(
+                "SELECT tecnico, estado FROM asignaciones "
+                "WHERE unidad=%s AND actividad_id=%s "
+                "AND estado IN ('pendiente','en_proceso') AND id != %s",
+                (s["unidad"], s["actividad_id"], s["id"]),
+            )
+
+            tiene_alerta = bool(dup_comp or dup_activa)
+
+            with st.container():
+                col_inf, col_ap, col_den = st.columns([4, 1, 1])
+                with col_inf:
+                    if tiene_alerta:
+                        st.error(
+                            f"🚨 **{s['tecnico']}** solicita **{s['actividad_id']}** — Unidad: **{s['unidad']}**"
+                        )
+                    else:
+                        st.warning(
+                            f"📋 **{s['tecnico']}** solicita **{s['actividad_id']}** — Unidad: **{s['unidad']}**"
+                        )
+
+                    # Alertas de seguridad detalladas
+                    if dup_comp:
+                        tecnicos_comp = ", ".join([d["tecnico"] for d in dup_comp])
+                        st.markdown(
+                            f'<div class="bloqueo-card"><p>'
+                            f'⛔ ACTIVIDAD YA COMPLETADA — Completada anteriormente por: <b>{tecnicos_comp}</b>. '
+                            f'Aprobar implica permitir una repetición de esta actividad.'
+                            f'</p></div>',
+                            unsafe_allow_html=True,
+                        )
+                    if dup_activa:
+                        for da in dup_activa:
+                            st.markdown(
+                                f'<div class="bloqueo-card"><p>'
+                                f'⚠️ TAREA DUPLICADA EN CURSO — <b>{da["tecnico"]}</b> ya tiene '
+                                f'esta misma actividad en estado <b>{da["estado"]}</b>.'
+                                f'</p></div>',
+                                unsafe_allow_html=True,
+                            )
+
+                if col_ap.button("✅ Aprobar", key=f"ap_{s['id']}", use_container_width=True):
+                    execute_write("UPDATE asignaciones SET estado='pendiente' WHERE id=%s", (s["id"],))
+                    st.rerun()
+                if col_den.button("❌ Rechazar", key=f"de_{s['id']}", use_container_width=True):
+                    execute_write("DELETE FROM asignaciones WHERE id=%s", (s["id"],))
+                    st.rerun()
+
+            st.markdown("<hr style='margin:6px 0;border-color:#e5eaf2;'>", unsafe_allow_html=True)
 
     # Asignación manual
     st.markdown('<div class="section-title">➕ Asignación Directa</div>', unsafe_allow_html=True)
@@ -488,90 +551,107 @@ elif menu == "🎯 Mis Tareas":
                     unsafe_allow_html=True,
                 )
 
-                # ── EVIDENCIA: cámara + archivos ──
+                # ── EVIDENCIA: solo subir archivos ──
                 if t["actividad_id"].lower() == "evidencia":
-                    st.markdown(
-                        f"<p style='font-size:.9rem;color:#374151;'>"
-                        f"Toma fotos con la cámara o sube archivos desde tu dispositivo. "
-                        f"Límite: <b>{MAX_FOTOS} fotos</b> en total.</p>",
-                        unsafe_allow_html=True,
-                    )
 
-                    tab_cam, tab_arch = st.tabs(["📷 Cámara", "📁 Subir Archivos"])
-
-                    with tab_cam:
-                        foto_cam = st.camera_input(
-                            "Captura una foto de evidencia",
-                            key=f"cam_{t['id']}",
-                        )
-                        if foto_cam:
-                            ts = datetime.now(tijuana_tz).strftime("%Y%m%d_%H%M%S")
-                            nombre_cam = f"cam_{t['unidad']}_{ts}.jpg"
-                            ok = execute_write(
-                                "INSERT INTO evidencias "
-                                "(unit_number, nombre_archivo, contenido, tecnico) "
-                                "VALUES (%s,%s,%s,%s)",
-                                (t["unidad"], nombre_cam, foto_cam.getvalue(), st.session_state.user),
-                            )
-                            if ok:
-                                st.success(f"✅ Foto guardada: {nombre_cam}")
-                                st.rerun()
-
-                    with tab_arch:
-                        archivos = st.file_uploader(
-                            f"Selecciona fotos (máx. {MAX_FOTOS})",
-                            accept_multiple_files=True,
-                            type=["jpg", "jpeg", "png"],
-                            key=f"fup_{t['id']}",
-                        )
-                        if archivos:
-                            if len(archivos) > MAX_FOTOS:
-                                st.warning(
-                                    f"⚠️ Seleccionaste {len(archivos)} fotos. "
-                                    f"Solo se guardarán las primeras {MAX_FOTOS}."
-                                )
-                                archivos = archivos[:MAX_FOTOS]
-                            else:
-                                st.info(f"📸 {len(archivos)} foto(s) lista(s) para guardar.")
-
-                            if st.button("💾 Guardar Fotos", key=f"savef_{t['id']}",
-                                         use_container_width=True, type="primary"):
-                                barra = st.progress(0, text="Guardando fotos...")
-                                for i, arc in enumerate(archivos):
-                                    execute_write(
-                                        "INSERT INTO evidencias "
-                                        "(unit_number, nombre_archivo, contenido, tecnico) "
-                                        "VALUES (%s,%s,%s,%s)",
-                                        (t["unidad"], arc.name, arc.read(), st.session_state.user),
-                                    )
-                                    barra.progress((i + 1) / len(archivos),
-                                                   text=f"Guardando {i+1}/{len(archivos)}...")
-                                st.success(f"✅ {len(archivos)} foto(s) guardada(s).")
-                                st.rerun()
-
-                    # Contador de fotos ya subidas
+                    # Conteo de fotos ya guardadas
                     fotos_prev = execute_read(
                         "SELECT COUNT(*) AS total FROM evidencias "
                         "WHERE unit_number=%s AND tecnico=%s",
                         (t["unidad"], st.session_state.user),
                     )
                     total_prev = fotos_prev[0]["total"] if fotos_prev else 0
-                    if total_prev:
-                        st.markdown(
-                            f"<p style='font-size:.85rem;color:#374151;margin-top:10px;'>"
-                            f"📂 <b>{total_prev} foto(s)</b> ya guardadas para esta unidad.</p>",
-                            unsafe_allow_html=True,
+                    restantes  = MAX_FOTOS - total_prev
+
+                    st.markdown(
+                        f'<div class="evidencia-info"><p>'
+                        f'📋 Unidad: <b>{t["unidad"]}</b> &nbsp;|&nbsp; '
+                        f'Técnico: <b>{st.session_state.user}</b><br>'
+                        f'Límite: <b>{MAX_FOTOS} fotos</b> por tarea &nbsp;·&nbsp; '
+                        f'Ya guardadas: <b>{total_prev}</b> &nbsp;·&nbsp; '
+                        f'Disponibles: <b>{restantes}</b>'
+                        f'</p></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    if restantes <= 0:
+                        st.warning(
+                            f"⚠️ Ya alcanzaste el límite de {MAX_FOTOS} fotos para esta unidad. "
+                            "Finaliza la actividad o contacta al administrador."
+                        )
+                    else:
+                        archivos = st.file_uploader(
+                            f"📁 Selecciona hasta {restantes} foto(s) — JPG, JPEG o PNG",
+                            accept_multiple_files=True,
+                            type=["jpg", "jpeg", "png"],
+                            key=f"fup_{t['id']}",
+                            help=f"Puedes subir varias fotos a la vez. Máximo {restantes} en esta carga.",
                         )
 
+                        if archivos:
+                            exceso = len(archivos) > restantes
+                            if exceso:
+                                st.warning(
+                                    f"⚠️ Seleccionaste {len(archivos)} fotos pero solo "
+                                    f"puedes subir {restantes} más. Se tomarán las primeras {restantes}."
+                                )
+                                archivos = archivos[:restantes]
+
+                            # Previsualizacion en grid
+                            st.markdown(
+                                f'<div class="fotos-badge">📸 {len(archivos)} foto(s) lista(s) para guardar</div>',
+                                unsafe_allow_html=True,
+                            )
+                            cols_prev = st.columns(min(len(archivos), 5))
+                            for idx, arc in enumerate(archivos):
+                                with cols_prev[idx % 5]:
+                                    st.image(arc, use_container_width=True, caption=arc.name[:18])
+
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button(
+                                f"💾 Guardar {len(archivos)} foto(s)",
+                                key=f"savef_{t['id']}",
+                                use_container_width=True,
+                                type="primary",
+                            ):
+                                barra = st.progress(0, text="Iniciando...")
+                                errores = 0
+                                for i, arc in enumerate(archivos):
+                                    arc.seek(0)
+                                    ok = execute_write(
+                                        "INSERT INTO evidencias "
+                                        "(unit_number, nombre_archivo, contenido, tecnico) "
+                                        "VALUES (%s,%s,%s,%s)",
+                                        (t["unidad"], arc.name, arc.read(), st.session_state.user),
+                                    )
+                                    if not ok:
+                                        errores += 1
+                                    barra.progress(
+                                        (i + 1) / len(archivos),
+                                        text=f"Guardando {i+1} de {len(archivos)}: {arc.name[:30]}",
+                                    )
+                                if errores == 0:
+                                    st.success(f"✅ {len(archivos)} foto(s) guardada(s) correctamente.")
+                                else:
+                                    st.warning(f"⚠️ {len(archivos)-errores} guardadas, {errores} fallaron.")
+                                st.rerun()
+
                     st.markdown("---")
-                    if st.button("✅ Finalizar Evidencia", key=f"finev_{t['id']}",
-                                 use_container_width=True):
-                        execute_write(
-                            "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                            (datetime.now(tijuana_tz), t["id"]),
+                    col_fin1, col_fin2 = st.columns([3, 1])
+                    with col_fin1:
+                        st.markdown(
+                            f"<p style='font-size:.85rem;color:#6b7280;margin:6px 0 0;'>"
+                            f"Al finalizar se cerrará la tarea. Total guardadas: <b>{total_prev}</b></p>",
+                            unsafe_allow_html=True,
                         )
-                        st.success("✅ Actividad completada.")
-                        st.rerun()
+                    with col_fin2:
+                        if st.button("✅ Finalizar", key=f"finev_{t['id']}", use_container_width=True):
+                            execute_write(
+                                "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
+                                (datetime.now(tijuana_tz), t["id"]),
+                            )
+                            st.success("✅ Evidencia completada.")
+                            st.rerun()
 
                 # ── TOMA DE SERIES ──
                 elif t["actividad_id"].lower() == "toma de series":
@@ -615,18 +695,92 @@ elif menu == "🎯 Mis Tareas":
 # ==================== NUEVA SOLICITUD (Técnico) ====================
 elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">🔔 Solicitar Actividad</div>', unsafe_allow_html=True)
+
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
+
     with st.form("sol_f"):
         u_sel = st.selectbox("Unidad",    [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
         a_sel = st.selectbox("Actividad", ACTIVIDADES_CARRIER)
         if st.form_submit_button("📤 Enviar Solicitud", use_container_width=True, type="primary"):
-            execute_write(
-                "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) "
-                "VALUES (%s,%s,%s,'solicitado')",
-                (u_sel.split(" - ")[1], a_sel, st.session_state.user),
+            unidad_sel = u_sel.split(" - ")[1]
+
+            # ── VALIDACIÓN 1: ya tiene esta tarea activa (pendiente, solicitada o en proceso) ──
+            activa = execute_read(
+                "SELECT id, estado FROM asignaciones "
+                "WHERE tecnico=%s AND unidad=%s AND actividad_id=%s "
+                "AND estado IN ('solicitado','pendiente','en_proceso')",
+                (st.session_state.user, unidad_sel, a_sel),
             )
-            st.toast("✅ Solicitud enviada correctamente")
-            st.rerun()
+            if activa:
+                estado_act = activa[0]["estado"]
+                etiquetas  = {
+                    "solicitado": "esperando aprobación del administrador",
+                    "pendiente":  "pendiente de iniciar",
+                    "en_proceso": "actualmente en proceso",
+                }
+                st.error(
+                    f"🚫 Ya tienes esta actividad registrada para la unidad **{unidad_sel}** "
+                    f"({etiquetas.get(estado_act, estado_act)}). "
+                    f"No puedes solicitarla de nuevo hasta que sea completada o cancelada por el administrador."
+                )
+
+            else:
+                # ── VALIDACIÓN 2: ya fue completada por alguien ──
+                completada = execute_read(
+                    "SELECT tecnico FROM asignaciones "
+                    "WHERE unidad=%s AND actividad_id=%s AND estado='completada'",
+                    (unidad_sel, a_sel),
+                )
+                if completada:
+                    st.warning(
+                        f"⚠️ La actividad **{a_sel}** en la unidad **{unidad_sel}** "
+                        f"ya fue completada por **{completada[0]['tecnico']}**. "
+                        "Tu solicitud se enviará al administrador para autorización especial."
+                    )
+                    # Se inserta igualmente pero el admin verá la alerta de duplicado al aprobar
+                    execute_write(
+                        "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) "
+                        "VALUES (%s,%s,%s,'solicitado')",
+                        (unidad_sel, a_sel, st.session_state.user),
+                    )
+                    st.toast("📨 Solicitud enviada — requiere autorización especial del administrador")
+                    st.rerun()
+                else:
+                    # ── Solicitud limpia ──
+                    execute_write(
+                        "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado) "
+                        "VALUES (%s,%s,%s,'solicitado')",
+                        (unidad_sel, a_sel, st.session_state.user),
+                    )
+                    st.toast("✅ Solicitud enviada correctamente")
+                    st.rerun()
+
+    # ── Historial de solicitudes del técnico ──
+    st.markdown('<div class="section-title">📋 Mis Solicitudes Recientes</div>', unsafe_allow_html=True)
+    historial = execute_read(
+        "SELECT unidad, actividad_id, estado, fecha_inicio, fecha_fin "
+        "FROM asignaciones WHERE tecnico=%s ORDER BY id DESC LIMIT 20",
+        (st.session_state.user,),
+    )
+    if historial:
+        ESTADO_BADGE = {
+            "solicitado":  ("🟡", "#fef9c3", "#854d0e"),
+            "pendiente":   ("🟠", "#fff7ed", "#9a3412"),
+            "en_proceso":  ("🔵", "#eff6ff", "#1e40af"),
+            "completada":  ("🟢", "#f0fdf4", "#166534"),
+        }
+        for h in historial:
+            icono, bg, color = ESTADO_BADGE.get(h["estado"], ("⚪", "#f9fafb", "#374151"))
+            st.markdown(
+                f'<div style="background:{bg};border-radius:8px;padding:10px 16px;'
+                f'margin-bottom:6px;border-left:4px solid {color};">'
+                f'<span style="font-weight:600;color:{color};">{icono} {h["estado"].upper()}</span>'
+                f' &nbsp;·&nbsp; <b>{h["unidad"]}</b> — {h["actividad_id"]}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("Sin solicitudes registradas.")
 
 
 # ==================== REGISTRO DE UNIDADES (Admin) ====================
@@ -684,3 +838,4 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+

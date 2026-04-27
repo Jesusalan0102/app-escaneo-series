@@ -14,8 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-st_autorefresh(interval=30 * 1000, key="global_refresh")
-
 tijuana_tz  = pytz.timezone('America/Tijuana')
 ahora_tj    = datetime.now(tijuana_tz)
 fecha_hoy   = ahora_tj.strftime('%Y-%m-%d')
@@ -212,6 +210,12 @@ for k, v in {"login": False, "user": "", "role": "", "last_count": 0}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# ── Auto-refresco: SOLO cuando el usuario ya está autenticado ──
+# Esto evita que el refresco cada 30s borre la sesión o saque al usuario
+# mientras hace scroll o revisa información anterior.
+if st.session_state.get("login"):
+    st_autorefresh(interval=30 * 1000, key="global_refresh")
+
 
 # ==================== LOGIN ====================
 if not st.session_state.login:
@@ -281,7 +285,11 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state.clear()
+        # Cerrar sesión de forma explícita sin eliminar claves de sistema
+        st.session_state["login"]      = False
+        st.session_state["user"]       = ""
+        st.session_state["role"]       = ""
+        st.session_state["last_count"] = 0
         st.rerun()
 
 
@@ -838,4 +846,3 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
-

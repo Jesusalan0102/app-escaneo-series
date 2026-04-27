@@ -1,0 +1,26 @@
+[server]
+# Puerto que Clever Cloud espera (debe coincidir con tu variable PORT=9000)
+port = 9000
+# Permite que el WebSocket no se caiga — evita el refresh al hacer scroll
+maxUploadSize = 50
+enableXsrfProtection = false
+enableCORS = false
+# Tiempo de vida del WebSocket más largo para evitar desconexiones
+webSocketPingTimeout = 300
+
+[browser]
+# Desactiva el aviso de actualización de Streamlit
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+
+[client]
+# Oculta el menú de hamburguesa y el footer de Streamlit
+showErrorDetails = false
+toolbarMode = "minimal"
+
+[theme]
+primaryColor = "#0057A8"
+backgroundColor = "#f5f7fa"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#002B5B"
+font = "sans serif"

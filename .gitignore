@@ -1,0 +1,10 @@
+# Secrets - NUNCA subir al repositorio
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/

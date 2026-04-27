@@ -209,6 +209,51 @@ for k, v in {"login": False, "user": "", "role": "", "last_count": 0}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# ── Recuperar sesión desde query params (sobrevive el autorefresh) ──
+params = st.query_params
+if not st.session_state.login and params.get("u") and params.get("r"):
+    st.session_state["login"] = True
+    st.session_state["user"]  = params["u"]
+    st.session_state["role"]  = params["r"]
+
+# ── Autorefresh inteligente: solo se dispara si el usuario NO está scrolleando ──
+# Espera 5 segundos de inactividad de scroll antes de refrescar.
+# No usa st_autorefresh ni ningún componente externo.
+if st.session_state.get("login"):
+    st.markdown("""
+    <script>
+    (function() {
+        var REFRESH_MS   = 30000;  // Refresca cada 30 segundos
+        var SCROLL_WAIT  = 5000;   // Espera 5s sin scroll antes de refrescar
+        var refreshTimer = null;
+        var userScrolling = false;
+        var scrollEndTimer = null;
+
+        function doRefresh() {
+            if (!userScrolling) {
+                window.location.reload();
+            }
+        }
+
+        function scheduleRefresh() {
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(doRefresh, REFRESH_MS);
+        }
+
+        window.addEventListener('scroll', function() {
+            userScrolling = true;
+            clearTimeout(refreshTimer);        // Cancelar refresco mientras scrollea
+            clearTimeout(scrollEndTimer);
+            scrollEndTimer = setTimeout(function() {
+                userScrolling = false;
+                scheduleRefresh();             // Reprogramar al terminar scroll
+            }, SCROLL_WAIT);
+        }, { passive: true });
+
+        scheduleRefresh();
+    })();
+    </script>
+    """, unsafe_allow_html=True)
 
 
 # ==================== LOGIN ====================
@@ -244,6 +289,9 @@ if not st.session_state.login:
                         "user":  user[0]["username"],
                         "role":  user[0]["role"].lower(),
                     })
+                    # Guardar sesión en query params para que sobreviva el refresco
+                    st.query_params["u"] = user[0]["username"]
+                    st.query_params["r"] = user[0]["role"].lower()
                     st.rerun()
                 else:
                     st.error("❌ Credenciales incorrectas")
@@ -279,11 +327,11 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        # Cerrar sesión de forma explícita sin eliminar claves de sistema
         st.session_state["login"]      = False
         st.session_state["user"]       = ""
         st.session_state["role"]       = ""
         st.session_state["last_count"] = 0
+        st.query_params.clear()
         st.rerun()
 
 

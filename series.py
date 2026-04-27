@@ -172,23 +172,23 @@ div[data-testid="stForm"] {{
 # ==================== BASE DE DATOS ====================
 def get_db_connection():
     try:
-        # Intenta primero con el formato de diccionario (st.secrets["db"])
+        # 1. Intenta el formato que ya tienes
         if "db" in st.secrets:
             return mysql.connector.connect(**st.secrets["db"], autocommit=True)
         
-        # Si falla, intenta leer las variables de entorno directamente una por una
+        # 2. Intenta leer las variables de Clever Cloud directamente
+        # Esto funcionará aunque Streamlit no las agrupe en "db"
         return mysql.connector.connect(
-            host=st.secrets["DB_HOST"],
-            user=st.secrets["DB_USER"],
-            password=st.secrets["DB_PASSWORD"],
-            database=st.secrets["DB_DATABASE"],
-            port=st.secrets["DB_PORT"],
+            host=st.secrets.get("DB_HOST") or st.secrets.get("STREAMLIT_SECRETS_DB_HOST"),
+            user=st.secrets.get("DB_USER") or st.secrets.get("STREAMLIT_SECRETS_DB_USER"),
+            password=st.secrets.get("DB_PASSWORD") or st.secrets.get("STREAMLIT_SECRETS_DB_PASSWORD"),
+            database=st.secrets.get("DB_DATABASE") or st.secrets.get("STREAMLIT_SECRETS_DB_DATABASE"),
+            port=int(st.secrets.get("DB_PORT") or st.secrets.get("STREAMLIT_SECRETS_DB_PORT") or 3306),
             autocommit=True
         )
     except Exception as e:
-        st.error(f"Error de conexión: {e}")
+        st.error(f"Error crítico de conexión: {e}")
         return None
-
 def execute_read(query, params=None):
     conn = get_db_connection()
     if conn:

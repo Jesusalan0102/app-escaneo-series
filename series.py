@@ -6,6 +6,7 @@ from datetime import datetime
 import io
 import pytz
 import zipfile
+import os
 
 # ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(
@@ -170,9 +171,33 @@ div[data-testid="stForm"] {{
 
 
 # ==================== BASE DE DATOS ====================
-def get_db_connection():
+def _get_db_config():
+    """
+    Lee credenciales primero desde variables de entorno (Clever Cloud),
+    y si no existen, cae a st.secrets (desarrollo local).
+    """
+    env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
+    if env_host:
+        return {
+            "host":     env_host,
+            "database": os.environ.get("STREAMLIT_SECRETS_DB_DATABASE"),
+            "user":     os.environ.get("STREAMLIT_SECRETS_DB_USER"),
+            "password": os.environ.get("STREAMLIT_SECRETS_DB_PASSWORD"),
+            "port":     int(os.environ.get("STREAMLIT_SECRETS_DB_PORT", 3306)),
+        }
+    # Fallback para desarrollo local con secrets.toml
     try:
-        return mysql.connector.connect(**st.secrets["db"], autocommit=True)
+        return dict(st.secrets["db"])
+    except Exception:
+        return None
+
+def get_db_connection():
+    config = _get_db_config()
+    if not config:
+        st.error("Error de conexión: No se encontraron credenciales de base de datos.")
+        return None
+    try:
+        return mysql.connector.connect(**config, autocommit=True)
     except Exception as e:
         st.error(f"Error de conexión: {e}")
         return None

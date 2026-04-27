@@ -172,7 +172,19 @@ div[data-testid="stForm"] {{
 # ==================== BASE DE DATOS ====================
 def get_db_connection():
     try:
-        return mysql.connector.connect(**st.secrets["db"], autocommit=True)
+        # Intenta primero con el formato de diccionario (st.secrets["db"])
+        if "db" in st.secrets:
+            return mysql.connector.connect(**st.secrets["db"], autocommit=True)
+        
+        # Si falla, intenta leer las variables de entorno directamente una por una
+        return mysql.connector.connect(
+            host=st.secrets["DB_HOST"],
+            user=st.secrets["DB_USER"],
+            password=st.secrets["DB_PASSWORD"],
+            database=st.secrets["DB_DATABASE"],
+            port=st.secrets["DB_PORT"],
+            autocommit=True
+        )
     except Exception as e:
         st.error(f"Error de conexión: {e}")
         return None

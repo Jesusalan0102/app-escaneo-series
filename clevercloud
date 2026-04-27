@@ -1,17 +1,17 @@
 {
-  "build": {
-    "type": "python"
-  },
-  "run": {
-    "main": "series.py",
-    "args": [
-      "run",
-      "series.py",
-      "--server.port",
-      "8080",
-      "--server.address",
-      "0.0.0.0"
-    ],
-    "executable": "streamlit"
-  }
+    "build": {
+        "type": "python"
+    },
+    "run": {
+        "main": "series.py",
+        "args": [
+            "run",
+            "series.py",
+            "--server.port",
+            "8080",
+            "--server.address",
+            "0.0.0.0"
+        ],
+        "executable": "streamlit"
+    }
 }

@@ -3,5 +3,4 @@ mysql-connector-python
 pandas
 plotly
 openpyxl
-streamlit-autorefresh
 pytz

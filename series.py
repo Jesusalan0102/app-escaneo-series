@@ -6,7 +6,6 @@ from datetime import datetime
 import io
 import pytz
 import zipfile
-from streamlit_autorefresh import st_autorefresh
 
 # ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(
@@ -211,10 +210,42 @@ for k, v in {"login": False, "user": "", "role": "", "last_count": 0}.items():
         st.session_state[k] = v
 
 # ── Auto-refresco: SOLO cuando el usuario ya está autenticado ──
-# Esto evita que el refresco cada 30s borre la sesión o saque al usuario
-# mientras hace scroll o revisa información anterior.
+# Se usa JavaScript con setTimeout en lugar de st_autorefresh para evitar
+# que el refresco interrumpa el scroll en dispositivos móviles.
 if st.session_state.get("login"):
-    st_autorefresh(interval=30 * 1000, key="global_refresh")
+    st.markdown(
+        """
+        <script>
+        (function() {
+            // Refresca solo si el usuario no está haciendo scroll activamente
+            let lastScrollY = window.scrollY;
+            let scrollTimer = null;
+            let refreshTimer = null;
+
+            function scheduleRefresh() {
+                refreshTimer = setTimeout(function() {
+                    // Solo refrescar si el scroll lleva más de 2 segundos quieto
+                    if (Math.abs(window.scrollY - lastScrollY) < 5) {
+                        window.location.reload();
+                    } else {
+                        scheduleRefresh(); // Reagendar si aún hay scroll
+                    }
+                }, 60000); // 60 segundos entre refrescos
+            }
+
+            window.addEventListener('scroll', function() {
+                lastScrollY = window.scrollY;
+                clearTimeout(refreshTimer);
+                clearTimeout(scrollTimer);
+                scrollTimer = setTimeout(scheduleRefresh, 3000); // Esperar 3s sin scroll
+            });
+
+            scheduleRefresh(); // Iniciar el primer ciclo
+        })();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ==================== LOGIN ====================

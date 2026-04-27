@@ -1,0 +1,6 @@
+{
+  "deploy": {
+    "module": "series",
+    "method": "custom"
+  }
+}

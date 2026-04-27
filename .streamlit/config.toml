@@ -1,0 +1,11 @@
+[server]
+headless = true
+port = 8080
+enableCORS = false
+enableXsrfProtection = false
+
+[client]
+toolbarMode = "hidden"
+
+[browser]
+gatherUsageStats = false

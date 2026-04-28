@@ -36,18 +36,79 @@ CAMPOS_SERIES = {
     "battery_charger_serial":  "Cargador de Batería",
 }
 
-ACTIVIDADES_CARRIER = [
+# Lista de actividades base (solo se usa si la tabla está vacía)
+_ACTIVIDADES_DEFAULT = [
     "Cableado", "Programación", "Soldadura", "Check de fugas",
     "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
     "Standby", "GPS", "Corriendo", "Inspección",
     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
 ]
 
+def init_actividades():
+    """Crea la tabla de actividades e inserta los valores por defecto si está vacía."""
+    execute_write("""
+        CREATE TABLE IF NOT EXISTS actividades (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nombre VARCHAR(100) NOT NULL UNIQUE
+        )
+    """)
+    existentes = execute_read("SELECT nombre FROM actividades")
+    if not existentes:
+        for act in _ACTIVIDADES_DEFAULT:
+            execute_write("INSERT IGNORE INTO actividades (nombre) VALUES (%s)", (act,))
+
+def get_actividades():
+    """Obtiene la lista de actividades desde la base de datos."""
+    rows = execute_read("SELECT nombre FROM actividades ORDER BY nombre")
+    return [r["nombre"] for r in rows] if rows else _ACTIVIDADES_DEFAULT
+
+# Inicializar tabla de actividades al arrancar
+init_actividades()
+ACTIVIDADES_CARRIER = get_actividades()
+
 MAX_FOTOS = 100   # Límite máximo de fotos por tarea de Evidencia
 
 # ==================== CSS ====================
 st.markdown(f"""
 <style>
+/* ══════════════════════════════════════
+   OCULTAR BRANDING DE STREAMLIT
+   ══════════════════════════════════════ */
+
+/* Header principal (menú hamburguesa + botón Deploy) */
+header[data-testid="stHeader"] {{
+    display: none !important;
+}}
+
+/* Footer "Made with Streamlit" */
+footer {{
+    display: none !important;
+}}
+
+/* Botón "Manage app" esquina inferior derecha */
+#MainMenu {{
+    display: none !important;
+}}
+.stDeployButton {{
+    display: none !important;
+}}
+[data-testid="stToolbar"] {{
+    display: none !important;
+}}
+[data-testid="manage-app-button"] {{
+    display: none !important;
+}}
+
+/* Barra de estado / running indicator */
+[data-testid="stStatusWidget"] {{
+    display: none !important;
+}}
+
+/* Quitar padding superior que deja el header oculto */
+.block-container {{
+    padding-top: 1.5rem !important;
+}}
+
 /* ── Base ── */
 .stApp {{ background-color: #F0F4F9; }}
 
@@ -345,7 +406,8 @@ with st.sidebar:
         menu = st.radio(
             "MENÚ PRINCIPAL",
             ["📊 Dashboard Ejecutivo", "🎯 Control de Asignaciones",
-             "📸 Registro de Unidades", "👥 Gestión de Usuarios"],
+             "📸 Registro de Unidades", "👥 Gestión de Usuarios",
+             "⚙️ Actividades"],
         )
     else:
         menu = st.radio("ÁREA DE TRABAJO", ["🎯 Mis Tareas", "🔔 Nueva Solicitud"])
@@ -578,6 +640,7 @@ elif menu == "🎯 Control de Asignaciones":
         c1, c2, c3 = st.columns(3)
         u_sel = c1.selectbox("Unidad",    [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
         t_sel = c2.selectbox("Técnico",   [x["username"] for x in t_db])
+        ACTIVIDADES_CARRIER = get_actividades()
         a_sel = c3.selectbox("Actividad", ACTIVIDADES_CARRIER)
         if st.form_submit_button("📋 Crear Orden", use_container_width=True, type="primary"):
             execute_write(
@@ -775,6 +838,7 @@ elif menu == "🔔 Nueva Solicitud":
 
     with st.form("sol_f"):
         u_sel = st.selectbox("Unidad",    [f"{x['id_lote']} - {x['unit_number']}" for x in u_db])
+        ACTIVIDADES_CARRIER = get_actividades()
         a_sel = st.selectbox("Actividad", ACTIVIDADES_CARRIER)
         if st.form_submit_button("📤 Enviar Solicitud", use_container_width=True, type="primary"):
             unidad_sel = u_sel.split(" - ")[1]
@@ -885,6 +949,52 @@ elif menu == "📸 Registro de Unidades":
 
 
 # ==================== GESTIÓN DE USUARIOS (Admin) ====================
+elif menu == "⚙️ Actividades":
+    st.markdown('<div class="main-header">⚙️ Administrar Actividades</div>', unsafe_allow_html=True)
+
+    # Recargar actividades desde DB
+    acts_actuales = execute_read("SELECT id, nombre FROM actividades ORDER BY nombre")
+    nombres_actuales = [a["nombre"] for a in acts_actuales] if acts_actuales else []
+
+    col1, col2 = st.columns([1.2, 1])
+
+    with col1:
+        st.markdown("### ➕ Agregar actividad")
+        nueva = st.text_input("Nombre de la nueva actividad", placeholder="Ej: Diagnóstico eléctrico")
+        if st.button("Agregar", type="primary", use_container_width=True):
+            if not nueva.strip():
+                st.warning("⚠️ Escribe un nombre para la actividad.")
+            elif nueva.strip() in nombres_actuales:
+                st.error(f"❌ La actividad **{nueva.strip()}** ya existe.")
+            else:
+                execute_write("INSERT INTO actividades (nombre) VALUES (%s)", (nueva.strip(),))
+                st.success(f"✅ Actividad **{nueva.strip()}** agregada correctamente.")
+                st.rerun()
+
+    with col2:
+        st.markdown("### 📋 Actividades actuales")
+        if not acts_actuales:
+            st.info("No hay actividades registradas.")
+        else:
+            for act in acts_actuales:
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"• {act['nombre']}")
+                if c2.button("🗑️", key=f"del_{act['id']}", help=f"Eliminar {act['nombre']}"):
+                    # Verificar que no esté en uso
+                    en_uso = execute_read(
+                        "SELECT COUNT(*) as total FROM asignaciones WHERE actividad_id=%s",
+                        (act["nombre"],)
+                    )
+                    if en_uso and en_uso[0]["total"] > 0:
+                        st.error(
+                            f"❌ No se puede eliminar **{act['nombre']}** "
+                            f"porque tiene {en_uso[0]['total']} asignación(es) registrada(s)."
+                        )
+                    else:
+                        execute_write("DELETE FROM actividades WHERE id=%s", (act["id"],))
+                        st.success(f"✅ Actividad **{act['nombre']}** eliminada.")
+                        st.rerun()
+
 elif menu == "👥 Gestión de Usuarios":
     st.markdown('<div class="main-header">👥 Usuarios del Sistema</div>', unsafe_allow_html=True)
 

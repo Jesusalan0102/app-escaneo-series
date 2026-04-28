@@ -39,7 +39,7 @@ CAMPOS_SERIES = {
 ACTIVIDADES_CARRIER = [
     "Cableado", "Programación", "Soldadura", "Check de fugas",
     "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
-    "Standby", "GPS", "Run", "Corriendo", "Inspección",
+    "Standby", "GPS", "Corriendo", "Inspección",
     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
 ]
 

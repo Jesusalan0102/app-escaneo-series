@@ -39,7 +39,7 @@ CAMPOS_SERIES = {
 ACTIVIDADES_CARRIER = [
     "Cableado", "Programación", "Soldadura", "Check de fugas",
     "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
-    "Standby", "GPS", "Run", "Corriendo", "Inspección",
+    "Standby", "GPS", "Corriendo", "Inspección",
     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
 ]
 
@@ -48,6 +48,44 @@ MAX_FOTOS = 100   # Límite máximo de fotos por tarea de Evidencia
 # ==================== CSS ====================
 st.markdown(f"""
 <style>
+/* ══════════════════════════════════════
+   OCULTAR BRANDING DE STREAMLIT
+   ══════════════════════════════════════ */
+
+/* Header principal (menú hamburguesa + botón Deploy) */
+header[data-testid="stHeader"] {{
+    display: none !important;
+}}
+
+/* Footer "Made with Streamlit" */
+footer {{
+    display: none !important;
+}}
+
+/* Botón "Manage app" esquina inferior derecha */
+#MainMenu {{
+    display: none !important;
+}}
+.stDeployButton {{
+    display: none !important;
+}}
+[data-testid="stToolbar"] {{
+    display: none !important;
+}}
+[data-testid="manage-app-button"] {{
+    display: none !important;
+}}
+
+/* Barra de estado / running indicator */
+[data-testid="stStatusWidget"] {{
+    display: none !important;
+}}
+
+/* Quitar padding superior que deja el header oculto */
+.block-container {{
+    padding-top: 1.5rem !important;
+}}
+
 /* ── Base ── */
 .stApp {{ background-color: #F0F4F9; }}
 

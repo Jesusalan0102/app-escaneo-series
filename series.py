@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
+import plotly.express as px
 from datetime import datetime
 import io
 import pytz
@@ -38,9 +39,8 @@ CAMPOS_SERIES = {
 ACTIVIDADES_CARRIER = [
     "Cableado", "Programación", "Soldadura", "Check de fugas",
     "Vacío", "Cerrado", "Pre-viaje", "Horas Corridas",
-    "Standby", "GPS", "Corriendo", "Inspección",
+    "Standby", "GPS", "Run", "Corriendo", "Inspección",
     "Accesorios", "Toma de Valores", "Evidencia", "Toma de Series",
-
 ]
 
 MAX_FOTOS = 100   # Límite máximo de fotos por tarea de Evidencia
@@ -48,44 +48,6 @@ MAX_FOTOS = 100   # Límite máximo de fotos por tarea de Evidencia
 # ==================== CSS ====================
 st.markdown(f"""
 <style>
-/* ══════════════════════════════════════
-   OCULTAR BRANDING DE STREAMLIT
-   ══════════════════════════════════════ */
-
-/* Header principal (menú hamburguesa + botón Deploy) */
-header[data-testid="stHeader"] {{
-    display: none !important;
-}}
-
-/* Footer "Made with Streamlit" */
-footer {{
-    display: none !important;
-}}
-
-/* Botón "Manage app" esquina inferior derecha */
-#MainMenu {{
-    display: none !important;
-}}
-.stDeployButton {{
-    display: none !important;
-}}
-[data-testid="stToolbar"] {{
-    display: none !important;
-}}
-[data-testid="manage-app-button"] {{
-    display: none !important;
-}}
-
-/* Barra de estado / running indicator */
-[data-testid="stStatusWidget"] {{
-    display: none !important;
-}}
-
-/* Quitar padding superior que deja el header oculto */
-.block-container {{
-    padding-top: 1.5rem !important;
-}}
-
 /* ── Base ── */
 .stApp {{ background-color: #F0F4F9; }}
 
@@ -470,29 +432,21 @@ if menu == "📊 Dashboard Ejecutivo":
             fig_p.update_layout(paper_bgcolor="white")
             st.plotly_chart(fig_p, use_container_width=True)
 
-   # ── Tabla estatus por unidad ──
-    st.markdown('<div class="section-title">📋 Estatus de Proceso y Valores de Operación</div>', unsafe_allow_html=True)
-    
-    # Obtener datos base
-    unid_raw = execute_read("SELECT * FROM unidades")
-    # Obtener valores dinámicos registrados
-    valores_raw = execute_read("SELECT unit_number, campo, valor FROM valores_registrados")
+    # ── Tabla estatus por unidad ──
+    st.markdown('<div class="section-title">📋 Estatus de Proceso por Unidad</div>', unsafe_allow_html=True)
+    if unid:
+        completadas_raw = execute_read(
+            "SELECT unidad, actividad_id FROM asignaciones WHERE estado='completada'"
+        )
+        completed_set = {(r["unidad"], r["actividad_id"]) for r in completadas_raw}
+        status_data = []
+        for u in unid:
+            row = {"LOTE": u["id_lote"], "#Económico": u["unit_number"]}
+            for act in ACTIVIDADES_CARRIER:
+                row[act] = "✔" if (u["unit_number"], act) in completed_set else "–"
+            status_data.append(row)
+        st.dataframe(pd.DataFrame(status_data), use_container_width=True, hide_index=True, height=340)
 
-    if unid_raw:
-        df_u = pd.DataFrame(unid_raw)
-        
-        # Unir valores dinámicos si existen
-        if valores_raw:
-            df_v = pd.DataFrame(valores_raw)
-            # Pivotar: Convierte filas de parámetros en columnas individuales
-            df_v_pivot = df_v.pivot(index='unit_number', columns='campo', values='valor').reset_index()
-            # Unión (Join) con la tabla principal de unidades
-            df_final = pd.merge(df_u, df_v_pivot, on='unit_number', how='left')
-        else:
-            df_final = df_u
-
-        # Mostrar tabla unificada
-        st.dataframe(df_final, use_container_width=True, hide_index=True)
     # ── Descarga de evidencias ──
     st.markdown('<div class="section-title">📂 Descarga de Evidencias por Unidad</div>', unsafe_allow_html=True)
     if unid:
@@ -775,31 +729,7 @@ elif menu == "🎯 Mis Tareas":
                             st.rerun()
 
                 # ── TOMA DE SERIES ──
-                elif t["actividad_id"].lower() == "toma de series":# ── TOMA DE VALORES DINÁMICA ──
-                elif t["actividad_id"].lower() == "toma de valores":
-                    st.markdown('<div class="section-title">📝 Registro de Parámetros</div>', unsafe_allow_html=True)
-                    
-                    # Campos definidos previamente (puedes hardcodearlos o traerlos de una tabla de config)
-                    campos_medicion = ["PSI Aceite", "Voltaje Bat", "Temperatura Salida", "Nivel Combustible"]
-                    
-                    with st.form(f"val_form_{t['id']}"):
-                        c1, c2 = st.columns(2)
-                        respuestas = {}
-                        for i, campo in enumerate(campos_medicion):
-                            target_col = c1 if i % 2 == 0 else c2
-                            respuestas[campo] = target_col.text_input(campo, key=f"v_{t['id']}_{i}")
-                        
-                        if st.form_submit_button("💾 Finalizar y Guardar Valores", use_container_width=True, type="primary"):
-                            for campo, valor in respuestas.items():
-                                execute_write(
-                                    "INSERT INTO valores_registrados (unit_number, campo, valor, tecnico) VALUES (%s, %s, %s, %s)",
-                                    (t["unidad"], campo, valor, st.session_state.user)
-                                )
-                            execute_write(
-                                "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                                (datetime.now(tijuana_tz), t["id"])
-                            )
-                            st.rerun()
+                elif t["actividad_id"].lower() == "toma de series":
                     with st.form(f"ser_{t['id']}"):
                         st.markdown(
                             "<p style='font-size:.9rem;color:#374151;margin-bottom:10px;'>"
@@ -926,35 +856,7 @@ elif menu == "🔔 Nueva Solicitud":
             )
     else:
         st.info("Sin solicitudes registradas.")
-# ==================== INVENTARIOS (Admin) ====================
-elif menu == "📦 Inventarios":
-    st.markdown('<div class="main-header">📦 Inventario de Refacciones y Equipos</div>', unsafe_allow_html=True)
-    
-    # Carga inicial desde DB
-    res_inv = execute_read("SELECT * FROM inventarios")
-    df_inv = pd.DataFrame(res_inv) if res_inv else pd.DataFrame(columns=["ID", "Item", "Cantidad", "Ubicacion"])
 
-    st.info("💡 Puedes editar celdas, agregar filas al final o eliminar seleccionando y presionando Suprimir.")
-    
-    # Editor dinámico
-    df_editado = st.data_editor(
-        df_inv, 
-        num_rows="dynamic", 
-        use_container_width=True, 
-        key="editor_inv",
-        hide_index=True
-    )
-
-    if st.button("💾 Guardar Cambios en Inventario", type="primary", use_container_width=True):
-        execute_write("DELETE FROM inventarios")
-        for _, row in df_editado.iterrows():
-            if row.get('Item'): # Evitar guardar filas vacías
-                execute_write(
-                    "INSERT INTO inventarios (item, cantidad, ubicacion) VALUES (%s, %s, %s)",
-                    (row.get('Item'), row.get('Cantidad'), row.get('Ubicacion'))
-                )
-        st.success("✅ Inventario sincronizado.")
-        st.rerun()
 
 # ==================== REGISTRO DE UNIDADES (Admin) ====================
 elif menu == "📸 Registro de Unidades":

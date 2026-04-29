@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-import plotly.express as px
 from datetime import datetime
 import io
 import pytz
@@ -471,8 +470,8 @@ if menu == "📊 Dashboard Ejecutivo":
             fig_p.update_layout(paper_bgcolor="white")
             st.plotly_chart(fig_p, use_container_width=True)
 
-    # ── Tabla estatus por unidad ──
- st.markdown('<div class="section-title">📋 Estatus de Proceso y Valores de Operación</div>', unsafe_allow_html=True)
+   # ── Tabla estatus por unidad ──
+    st.markdown('<div class="section-title">📋 Estatus de Proceso y Valores de Operación</div>', unsafe_allow_html=True)
     
     # Obtener datos base
     unid_raw = execute_read("SELECT * FROM unidades")
@@ -494,7 +493,6 @@ if menu == "📊 Dashboard Ejecutivo":
 
         # Mostrar tabla unificada
         st.dataframe(df_final, use_container_width=True, hide_index=True)
-
     # ── Descarga de evidencias ──
     st.markdown('<div class="section-title">📂 Descarga de Evidencias por Unidad</div>', unsafe_allow_html=True)
     if unid:

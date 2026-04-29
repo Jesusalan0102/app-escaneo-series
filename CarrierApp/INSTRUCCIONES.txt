@@ -1,0 +1,65 @@
+═══════════════════════════════════════════════════════════
+  CARRIER TRANSICOLD - INSTRUCCIONES PARA COMPILAR EL APK
+═══════════════════════════════════════════════════════════
+
+PASO 1 — ABRIR EN ANDROID STUDIO
+─────────────────────────────────
+1. Abre Android Studio
+2. File → Open → selecciona la carpeta "CarrierApp"
+3. Espera que Gradle sincronice (puede tardar 2-3 minutos)
+
+PASO 2 — CONFIGURAR TU URL (OBLIGATORIO)
+─────────────────────────────────────────
+Abre este archivo:
+  app/src/main/java/com/carrier/transicold/SplashActivity.java
+
+Busca esta línea:
+  public static final String APP_URL = "https://TU-APP.cleverapps.io";
+
+Reemplaza con la URL real de tu app en Clever Cloud.
+Ejemplo:
+  public static final String APP_URL = "https://app-escaneo-series.cleverapps.io";
+
+PASO 3 — AGREGAR EL LOGO (OPCIONAL)
+─────────────────────────────────────
+Reemplaza el archivo:
+  app/src/main/res/drawable/carrier_logo.xml
+
+Con una imagen PNG del logo de Carrier Transicold.
+Tamaño recomendado: 520 x 200 px, fondo transparente.
+Renombra el archivo a: carrier_logo.png
+
+PASO 4 — COMPILAR EL APK
+──────────────────────────
+En Android Studio:
+  Build → Build Bundle(s) / APK(s) → Build APK(s)
+
+El APK se genera en:
+  app/build/outputs/apk/debug/app-debug.apk
+
+PASO 5 — INSTALAR EN ANDROID
+──────────────────────────────
+Opción A: Cable USB
+  - Conecta el celular por USB
+  - Activa "Depuración USB" en el celular
+  - Run → Run 'app' en Android Studio
+
+Opción B: Copiar APK manualmente
+  - Copia app-debug.apk al celular
+  - Activa "Instalar apps de fuentes desconocidas" en Ajustes
+  - Abre el APK desde el celular y sigue los pasos
+
+═══════════════════════════════════════════════════════════
+  QUÉ HACE ESTE APK
+═══════════════════════════════════════════════════════════
+
+✅ Abre tu app de Clever Cloud en un WebView nativo
+✅ Sin branding de Streamlit (oculto por CSS inyectado)
+✅ Sin refresh al hacer scroll (OVER_SCROLL_NEVER)
+✅ Pantalla de splash con logo al abrir
+✅ Pantalla de error si no hay internet, con botón "Reintentar"
+✅ Botón atrás navega dentro de la app
+✅ Ícono de la app en el celular
+✅ Barra de progreso mientras carga
+
+═══════════════════════════════════════════════════════════

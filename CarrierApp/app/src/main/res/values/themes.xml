@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.CarrierTransicold" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#002B5B</item>
+        <item name="colorPrimaryDark">#001d3d</item>
+        <item name="colorAccent">#0057A8</item>
+        <item name="android:windowBackground">#002B5B</item>
+        <item name="android:statusBarColor">#001d3d</item>
+        <item name="android:navigationBarColor">#002B5B</item>
+    </style>
+
+    <style name="Theme.Splash" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">#002B5B</item>
+        <item name="android:statusBarColor">#001d3d</item>
+        <item name="android:navigationBarColor">#002B5B</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+
+</resources>

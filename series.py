@@ -281,9 +281,112 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
     .kpi-num {{ font-size: 1.8rem; }}
     .login-card {{ padding: 24px 20px; }}
 }}
+
+/* ══ BOTÓN FLOTANTE HAMBURGUESA ══ */
+#sidebar-fab {{
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 99999;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, {CARRIER_BLUE} 0%, #0057A8 100%);
+    border: 2px solid rgba(255,255,255,0.3);
+    box-shadow: 0 4px 16px rgba(0,43,91,0.45);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}}
+#sidebar-fab:hover {{
+    transform: scale(1.08);
+    box-shadow: 0 6px 22px rgba(0,43,91,0.55);
+}}
+#sidebar-fab svg {{
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: white;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+}}
+/* Ocultar en desktop cuando el sidebar ya es visible */
+@media (min-width: 992px) {{
+    #sidebar-fab {{ display: none; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
+
+# ==================== BOTÓN FLOTANTE SIDEBAR ====================
+# Inyecta el botón hamburguesa en el DOM y el JS que controla el sidebar de Streamlit.
+# Funciona tanto en navegador móvil como en APK WebView.
+st.markdown("""
+<div id="sidebar-fab" onclick="toggleSidebar()" title="Abrir menú">
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <line x1="3" y1="6"  x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+</div>
+<script>
+(function() {
+    function getSidebar() {
+        return document.querySelector('section[data-testid="stSidebar"]');
+    }
+    function getSidebarCollapseBtn() {
+        // Streamlit renders a collapse button inside the sidebar
+        return document.querySelector('button[data-testid="collapsedControl"]') ||
+               document.querySelector('button[kind="header"]') ||
+               document.querySelector('[data-testid="stSidebarCollapsedControl"] button');
+    }
+    window.toggleSidebar = function() {
+        var sidebar = getSidebar();
+        if (!sidebar) return;
+        var collapsed = sidebar.getAttribute('aria-expanded') === 'false' ||
+                        sidebar.classList.contains('st-emotion-cache-hidden') ||
+                        sidebar.style.transform === 'translateX(-100%)' ||
+                        getComputedStyle(sidebar).transform.includes('-') ||
+                        sidebar.offsetWidth < 10;
+        if (collapsed) {
+            // Try Streamlit's native collapse button first
+            var btn = document.querySelector('[data-testid="stSidebarCollapsedControl"] button') ||
+                      document.querySelector('button[data-testid="collapsedControl"]');
+            if (btn) {
+                btn.click();
+            } else {
+                // Fallback: force open via inline style
+                sidebar.style.cssText = 'transform:none!important;visibility:visible!important;width:21rem!important;';
+            }
+        } else {
+            var btn2 = sidebar.querySelector('button[data-testid="baseButton-header"]') ||
+                       sidebar.querySelector('button[aria-label*="close"], button[aria-label*="Close"], button[aria-label*="cerrar"]');
+            if (btn2) {
+                btn2.click();
+            } else {
+                sidebar.style.cssText = 'transform:translateX(-100%)!important;';
+            }
+        }
+    };
+    // Show FAB only when sidebar is hidden (mobile/APK)
+    function updateFabVisibility() {
+        var fab = document.getElementById('sidebar-fab');
+        if (!fab) return;
+        if (window.innerWidth >= 992) { fab.style.display = 'none'; return; }
+        var sidebar = getSidebar();
+        if (!sidebar) { fab.style.display = 'flex'; return; }
+        var rect = sidebar.getBoundingClientRect();
+        fab.style.display = (rect.left < -50 || rect.width < 10) ? 'flex' : 'none';
+    }
+    // Run periodically to track sidebar state
+    setInterval(updateFabVisibility, 600);
+    window.addEventListener('resize', updateFabVisibility);
+    setTimeout(updateFabVisibility, 1500);
+})();
+</script>
+""", unsafe_allow_html=True)
 
 # ==================== BASE DE DATOS ====================
 # FUENTE: Ambos códigos (idéntica lógica; se usa la del Código 1 que incluye init_extra_tables)
@@ -388,9 +491,10 @@ if not st.session_state.login and params.get("u") and params.get("r"):
     st.session_state["user"]  = params["u"]
     st.session_state["role"]  = params["r"]
 
-# ── Autorefresh inteligente + Fix sidebar APK ──
-# Refresca cada 30s sin interrumpir scroll.
-# Fix sidebar: abre el sidebar automáticamente tras cada recarga en WebView Android.
+# ── Autorefresh inteligente ──
+# FUENTE: Ambos códigos tienen la misma lógica JS — se conserva íntegra.
+# Espera 30s para refrescar, pero cancela si el usuario está scrolleando.
+# Reanuda el contador 5s después de que el scroll se detiene.
 if st.session_state.get("login"):
     st.markdown("""
     <script>
@@ -398,26 +502,6 @@ if st.session_state.get("login"):
         var REFRESH_MS  = 30000;
         var SCROLL_WAIT = 5000;
         var refreshTimer = null, scrollEndTimer = null, userScrolling = false;
-
-        /* ── Forzar sidebar abierto en WebView Android ── */
-        function openSidebar() {
-            var attempts = 0;
-            var iv = setInterval(function() {
-                attempts++;
-                /* Streamlit >= 1.28: botón colapsado con data-testid */
-                var btn = document.querySelector('[data-testid="collapsedControl"]');
-                if (btn) { btn.click(); clearInterval(iv); return; }
-                /* Fallback: buscar sidebar y verificar si está oculto */
-                var sb = document.querySelector('[data-testid="stSidebar"]');
-                if (sb && sb.getBoundingClientRect().width > 100) { clearInterval(iv); return; }
-                if (attempts > 40) clearInterval(iv);
-            }, 250);
-        }
-
-        /* Ejecutar al cargar y después de que Streamlit termine de renderizar */
-        window.addEventListener('load', function() { setTimeout(openSidebar, 600); });
-        setTimeout(openSidebar, 1000);
-        setTimeout(openSidebar, 2500);
 
         function doRefresh() {
             if (!userScrolling) window.location.reload();
@@ -446,15 +530,15 @@ if st.session_state.get("login"):
 
 # ==================== LOGIN ====================
 if not st.session_state.login:
+    st.markdown(
+        f'<div style="text-align:center;padding:40px 0 20px;">'
+        f'<img src="{LOGO_URL}" width="480" style="border-radius:12px;'
+        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);"></div>',
+        unsafe_allow_html=True,
+    )
     _, col_c, _ = st.columns([1, 1.2, 1])
     with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        # Logo centrado dentro del card — sin marca de agua gigante
-        st.markdown(
-            f'<div style="text-align:center;margin-bottom:16px;">'
-            f'<img src="{LOGO_URL}" width="150" style="border-radius:8px;"></div>',
-            unsafe_allow_html=True,
-        )
         st.markdown(
             f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:6px;"
             f"font-family:Inter,sans-serif;font-weight:800;'>Carrier Transicold</h3>"
@@ -483,7 +567,7 @@ if not st.session_state.login:
                     st.error("❌ Credenciales incorrectas. Intenta de nuevo.")
         st.markdown(
             f"<p style='text-align:center;margin-top:18px;font-size:0.78rem;color:#9ca3af;'>"
-            f"© 2026 Carrier Transicold · Todos los derechos reservados</p>",
+            f"© {fecha_hoy[:4]} Carrier Transicold · Todos los derechos reservados</p>",
             unsafe_allow_html=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1309,4 +1393,5 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+
 

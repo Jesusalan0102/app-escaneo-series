@@ -517,37 +517,236 @@ if not st.session_state.login and params.get("u") and params.get("r"):
     st.session_state["user"]  = params["u"]
     st.session_state["role"]  = params["r"]
 
-# ── Autorefresh inteligente ──
-# FUENTE: Ambos códigos tienen la misma lógica JS — se conserva íntegra.
-# Espera 30s para refrescar, pero cancela si el usuario está scrolleando.
-# Reanuda el contador 5s después de que el scroll se detiene.
+# ── Autorefresh inteligente v2 ──
+# Detecta: scroll activo, foco en inputs/textareas/selects/contenteditable,
+# cambios no guardados en campos de formulario, y actividad de teclado reciente.
+# Muestra toast de "actualización disponible" en lugar de recargar abruptamente
+# cuando el usuario está editando. Pospone el refresh hasta que el usuario esté idle.
 if st.session_state.get("login"):
     st.markdown("""
     <script>
     (function() {
-        var REFRESH_MS  = 30000;
-        var SCROLL_WAIT = 5000;
-        var refreshTimer = null, scrollEndTimer = null, userScrolling = false;
+        // ═══════════════════════════════════════════════
+        // CONFIGURACIÓN
+        // ═══════════════════════════════════════════════
+        var CFG = {
+            REFRESH_MS        : 30000,   // Intervalo base de refresco (ms)
+            IDLE_WAIT_MS      : 6000,    // Tiempo idle tras última interacción para refrescar
+            SCROLL_TAIL_MS    : 5000,    // Gracia tras soltar el scroll
+            INPUT_TAIL_MS     : 8000,    // Gracia tras última tecla pulsada
+            FOCUS_TAIL_MS     : 10000,   // Gracia tras perder foco en un campo
+            TOAST_DURATION_MS : 5000,    // Duración del toast de "actualización disponible"
+            CHECK_INTERVAL_MS : 1000,    // Frecuencia del watchdog de estado
+        };
+
+        // ═══════════════════════════════════════════════
+        // ESTADO
+        // ═══════════════════════════════════════════════
+        var state = {
+            userScrolling    : false,
+            fieldFocused     : false,
+            recentKeypress   : false,
+            hasDirtyFields   : false,
+            pendingRefresh   : false,
+            lastInteraction  : Date.now(),
+            refreshScheduled : null,
+            scrollEndTimer   : null,
+            inputEndTimer    : null,
+            focusEndTimer    : null,
+            watchdogInterval : null,
+            toastVisible     : false,
+        };
+
+        // ═══════════════════════════════════════════════
+        // TOAST DE ACTUALIZACIÓN DISPONIBLE
+        // ═══════════════════════════════════════════════
+        function createToast() {
+            if (document.getElementById('__refresh_toast__')) return;
+            var toast = document.createElement('div');
+            toast.id = '__refresh_toast__';
+            toast.innerHTML = [
+                '<span style="font-size:1rem">🔄</span>',
+                '<span style="flex:1">Actualización disponible</span>',
+                '<button id="__toast_now__" style="',
+                    'background:#0057A8;color:white;border:none;border-radius:6px;',
+                    'padding:4px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;',
+                    'font-family:Inter,sans-serif;',
+                '">Actualizar</button>',
+                '<button id="__toast_dismiss__" style="',
+                    'background:rgba(255,255,255,0.15);color:white;border:none;border-radius:6px;',
+                    'padding:4px 10px;font-size:0.78rem;cursor:pointer;margin-left:4px;',
+                '">✕</button>',
+            ].join('');
+            toast.style.cssText = [
+                'position:fixed;bottom:24px;right:24px;z-index:999999;',
+                'background:linear-gradient(135deg,#002B5B 0%,#0057A8 100%);',
+                'color:white;padding:12px 16px;border-radius:14px;',
+                'box-shadow:0 8px 28px rgba(0,43,91,0.45);',
+                'display:flex;align-items:center;gap:10px;',
+                'font-family:Inter,sans-serif;font-size:0.875rem;font-weight:500;',
+                'max-width:340px;animation:__slideIn__ 0.35s ease;',
+            ].join('');
+
+            var style = document.createElement('style');
+            style.textContent = [
+                '@keyframes __slideIn__{from{transform:translateY(80px);opacity:0}to{transform:translateY(0);opacity:1}}',
+                '@keyframes __slideOut__{from{transform:translateY(0);opacity:1}to{transform:translateY(80px);opacity:0}}',
+            ].join('');
+            document.head.appendChild(style);
+            document.body.appendChild(toast);
+
+            document.getElementById('__toast_now__').addEventListener('click', function() {
+                removeToast(); window.location.reload();
+            });
+            document.getElementById('__toast_dismiss__').addEventListener('click', function() {
+                removeToast();
+                state.pendingRefresh = false;
+                scheduleRefresh(); // reprogramar desde cero
+            });
+            state.toastVisible = true;
+        }
+
+        function removeToast() {
+            var t = document.getElementById('__refresh_toast__');
+            if (!t) return;
+            t.style.animation = '__slideOut__ 0.3s ease forwards';
+            setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 320);
+            state.toastVisible = false;
+        }
+
+        // ═══════════════════════════════════════════════
+        // DETECCIÓN DE CAMPOS CON CONTENIDO NO GUARDADO
+        // ═══════════════════════════════════════════════
+        function checkDirtyFields() {
+            var inputs = document.querySelectorAll(
+                'input:not([type="hidden"]):not([type="submit"]):not([type="button"]),' +
+                'textarea,[contenteditable="true"]'
+            );
+            for (var i = 0; i < inputs.length; i++) {
+                var el = inputs[i];
+                var val = el.value !== undefined ? el.value : el.textContent;
+                // Considerar "sucio" si tiene valor y no es un placeholder
+                if (val && val.trim().length > 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // ═══════════════════════════════════════════════
+        // LÓGICA PRINCIPAL DE REFRESCO
+        // ═══════════════════════════════════════════════
+        function isUserBusy() {
+            return (
+                state.userScrolling   ||
+                state.fieldFocused    ||
+                state.recentKeypress  ||
+                state.hasDirtyFields
+            );
+        }
 
         function doRefresh() {
-            if (!userScrolling) window.location.reload();
+            state.hasDirtyFields = checkDirtyFields();
+            if (isUserBusy()) {
+                // Usuario ocupado → mostrar toast en lugar de recargar
+                state.pendingRefresh = true;
+                if (!state.toastVisible) createToast();
+                return; // No refrescar ahora; el watchdog lo intentará más tarde
+            }
+            removeToast();
+            window.location.reload();
         }
 
         function scheduleRefresh() {
-            clearTimeout(refreshTimer);
-            refreshTimer = setTimeout(doRefresh, REFRESH_MS);
+            clearTimeout(state.refreshScheduled);
+            state.refreshScheduled = setTimeout(doRefresh, CFG.REFRESH_MS);
         }
 
+        // ═══════════════════════════════════════════════
+        // WATCHDOG: intenta refrescar si hay pendiente y el usuario está idle
+        // ═══════════════════════════════════════════════
+        state.watchdogInterval = setInterval(function() {
+            if (!state.pendingRefresh) return;
+            state.hasDirtyFields = checkDirtyFields();
+            var idleMs = Date.now() - state.lastInteraction;
+            if (!isUserBusy() && idleMs >= CFG.IDLE_WAIT_MS) {
+                removeToast();
+                window.location.reload();
+            }
+        }, CFG.CHECK_INTERVAL_MS);
+
+        // ═══════════════════════════════════════════════
+        // LISTENERS DE INTERACCIÓN
+        // ═══════════════════════════════════════════════
+
+        // — Scroll —
         window.addEventListener('scroll', function() {
-            userScrolling = true;
-            clearTimeout(refreshTimer);
-            clearTimeout(scrollEndTimer);
-            scrollEndTimer = setTimeout(function() {
-                userScrolling = false;
-                scheduleRefresh();
-            }, SCROLL_WAIT);
+            state.userScrolling = true;
+            state.lastInteraction = Date.now();
+            clearTimeout(state.refreshScheduled);
+            clearTimeout(state.scrollEndTimer);
+            state.scrollEndTimer = setTimeout(function() {
+                state.userScrolling = false;
+                if (!state.pendingRefresh) scheduleRefresh();
+            }, CFG.SCROLL_TAIL_MS);
         }, { passive: true });
 
+        // — Foco en campos editables —
+        document.addEventListener('focusin', function(e) {
+            var tag = e.target.tagName;
+            var isEditable = (
+                tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+                e.target.getAttribute('contenteditable') === 'true'
+            );
+            if (isEditable) {
+                state.fieldFocused = true;
+                state.lastInteraction = Date.now();
+                clearTimeout(state.refreshScheduled);
+                clearTimeout(state.focusEndTimer);
+            }
+        }, true);
+
+        document.addEventListener('focusout', function(e) {
+            var tag = e.target.tagName;
+            var isEditable = (
+                tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+                e.target.getAttribute('contenteditable') === 'true'
+            );
+            if (isEditable) {
+                state.lastInteraction = Date.now();
+                clearTimeout(state.focusEndTimer);
+                state.focusEndTimer = setTimeout(function() {
+                    state.fieldFocused = false;
+                    state.hasDirtyFields = checkDirtyFields();
+                    if (!state.pendingRefresh && !isUserBusy()) scheduleRefresh();
+                }, CFG.FOCUS_TAIL_MS);
+            }
+        }, true);
+
+        // — Teclado —
+        document.addEventListener('keydown', function() {
+            state.recentKeypress = true;
+            state.lastInteraction = Date.now();
+            clearTimeout(state.inputEndTimer);
+            clearTimeout(state.refreshScheduled);
+            state.inputEndTimer = setTimeout(function() {
+                state.recentKeypress = false;
+                state.hasDirtyFields = checkDirtyFields();
+                if (!state.pendingRefresh && !isUserBusy()) scheduleRefresh();
+            }, CFG.INPUT_TAIL_MS);
+        }, { passive: true });
+
+        // — Movimiento de mouse / touch (actividad general) —
+        function onActivity() {
+            state.lastInteraction = Date.now();
+        }
+        document.addEventListener('mousemove', onActivity, { passive: true });
+        document.addEventListener('touchstart', onActivity, { passive: true });
+        document.addEventListener('click',     onActivity, { passive: true });
+
+        // ═══════════════════════════════════════════════
+        // ARRANQUE
+        // ═══════════════════════════════════════════════
         scheduleRefresh();
     })();
     </script>

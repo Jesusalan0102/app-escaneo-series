@@ -32,7 +32,7 @@ CARRIER_SUCCESS = "#16a34a"
 CARRIER_WARN    = "#d97706"
 CARRIER_DANGER  = "#dc2626"
 
-LOGO_URL  = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
+LOGO_URL  = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMjAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCI+CiAgPCEtLSBXaGl0ZSBiYWNrZ3JvdW5kIGNhcmQgLS0+CiAgPHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIyMDAiIHJ4PSIxNiIgZmlsbD0id2hpdGUiLz4KICAKICA8IS0tIEJsdWUgb3ZhbCAtLT4KICA8ZWxsaXBzZSBjeD0iMjAwIiBjeT0iOTAiIHJ4PSIxMzAiIHJ5PSI1NSIgZmlsbD0iIzAwMkI1QiIvPgogIAogIDwhLS0gQ2FycmllciB0ZXh0IGluIG92YWwgLS0+CiAgPHRleHQgeD0iMjAwIiB5PSIxMDAiIAogICAgICAgIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgCiAgICAgICAgZm9udC1zaXplPSIzOCIgCiAgICAgICAgZm9udC1zdHlsZT0iaXRhbGljIgogICAgICAgIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IndoaXRlIiAKICAgICAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5DYXJyaWVyPC90ZXh0PgogIAogIDwhLS0gU25vd2ZsYWtlIGFzdGVyaXNrIC0tPgogIDx0ZXh0IHg9IjMxMCIgeT0iMTA1IiAKICAgICAgICBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIAogICAgICAgIGZvbnQtc2l6ZT0iMjgiIAogICAgICAgIGZpbGw9IndoaXRlIiAKICAgICAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7inLs8L3RleHQ+CgogIDwhLS0gVFJBTlNJQ09MRCB0ZXh0IGJlbG93IG92YWwgLS0+CiAgPHRleHQgeD0iMjAwIiB5PSIxNjUiIAogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgCiAgICAgICAgZm9udC1zaXplPSIyNiIgCiAgICAgICAgZm9udC13ZWlnaHQ9ImJvbGQiCiAgICAgICAgbGV0dGVyLXNwYWNpbmc9IjQiCiAgICAgICAgZmlsbD0iIzAwMkI1QiIgCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSI+VFJBTlNJQ09MRDwvdGV4dD4KPC9zdmc+"
 SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
@@ -1393,5 +1393,4 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
-
 

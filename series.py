@@ -388,10 +388,9 @@ if not st.session_state.login and params.get("u") and params.get("r"):
     st.session_state["user"]  = params["u"]
     st.session_state["role"]  = params["r"]
 
-# ── Autorefresh inteligente ──
-# FUENTE: Ambos códigos tienen la misma lógica JS — se conserva íntegra.
-# Espera 30s para refrescar, pero cancela si el usuario está scrolleando.
-# Reanuda el contador 5s después de que el scroll se detiene.
+# ── Autorefresh inteligente + Fix sidebar APK ──
+# Refresca cada 30s sin interrumpir scroll.
+# Fix sidebar: abre el sidebar automáticamente tras cada recarga en WebView Android.
 if st.session_state.get("login"):
     st.markdown("""
     <script>
@@ -399,6 +398,26 @@ if st.session_state.get("login"):
         var REFRESH_MS  = 30000;
         var SCROLL_WAIT = 5000;
         var refreshTimer = null, scrollEndTimer = null, userScrolling = false;
+
+        /* ── Forzar sidebar abierto en WebView Android ── */
+        function openSidebar() {
+            var attempts = 0;
+            var iv = setInterval(function() {
+                attempts++;
+                /* Streamlit >= 1.28: botón colapsado con data-testid */
+                var btn = document.querySelector('[data-testid="collapsedControl"]');
+                if (btn) { btn.click(); clearInterval(iv); return; }
+                /* Fallback: buscar sidebar y verificar si está oculto */
+                var sb = document.querySelector('[data-testid="stSidebar"]');
+                if (sb && sb.getBoundingClientRect().width > 100) { clearInterval(iv); return; }
+                if (attempts > 40) clearInterval(iv);
+            }, 250);
+        }
+
+        /* Ejecutar al cargar y después de que Streamlit termine de renderizar */
+        window.addEventListener('load', function() { setTimeout(openSidebar, 600); });
+        setTimeout(openSidebar, 1000);
+        setTimeout(openSidebar, 2500);
 
         function doRefresh() {
             if (!userScrolling) window.location.reload();
@@ -427,15 +446,15 @@ if st.session_state.get("login"):
 
 # ==================== LOGIN ====================
 if not st.session_state.login:
-    st.markdown(
-        f'<div style="text-align:center;padding:40px 0 20px;">'
-        f'<img src="{LOGO_URL}" width="480" style="border-radius:12px;'
-        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);"></div>',
-        unsafe_allow_html=True,
-    )
     _, col_c, _ = st.columns([1, 1.2, 1])
     with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
+        # Logo centrado dentro del card — sin marca de agua gigante
+        st.markdown(
+            f'<div style="text-align:center;margin-bottom:16px;">'
+            f'<img src="{LOGO_URL}" width="150" style="border-radius:8px;"></div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:6px;"
             f"font-family:Inter,sans-serif;font-weight:800;'>Carrier Transicold</h3>"
@@ -464,7 +483,7 @@ if not st.session_state.login:
                     st.error("❌ Credenciales incorrectas. Intenta de nuevo.")
         st.markdown(
             f"<p style='text-align:center;margin-top:18px;font-size:0.78rem;color:#9ca3af;'>"
-            f"© {fecha_hoy[:4]} Carrier Transicold · Todos los derechos reservados</p>",
+            f"© 2026 Carrier Transicold · Todos los derechos reservados</p>",
             unsafe_allow_html=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)

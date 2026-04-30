@@ -559,7 +559,7 @@ if st.session_state.get("login"):
 if not st.session_state.login:
     st.markdown(
         f'<div style="text-align:center;padding:40px 0 20px;">'
-        f'<img src="{LOGO_URL}" width="480" style="border-radius:12px;'
+        f'<img src="{LOGO_URL}" width="700" style="border-radius:12px;'
         f'box-shadow:0 8px 32px rgba(0,43,91,0.18);"></div>',
         unsafe_allow_html=True,
     )

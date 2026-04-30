@@ -32,7 +32,7 @@ CARRIER_SUCCESS = "#16a34a"
 CARRIER_WARN    = "#d97706"
 CARRIER_DANGER  = "#dc2626"
 
-LOGO_URL  = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMjAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCI+CiAgPCEtLSBXaGl0ZSBiYWNrZ3JvdW5kIGNhcmQgLS0+CiAgPHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIyMDAiIHJ4PSIxNiIgZmlsbD0id2hpdGUiLz4KICAKICA8IS0tIEJsdWUgb3ZhbCAtLT4KICA8ZWxsaXBzZSBjeD0iMjAwIiBjeT0iOTAiIHJ4PSIxMzAiIHJ5PSI1NSIgZmlsbD0iIzAwMkI1QiIvPgogIAogIDwhLS0gQ2FycmllciB0ZXh0IGluIG92YWwgLS0+CiAgPHRleHQgeD0iMjAwIiB5PSIxMDAiIAogICAgICAgIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgCiAgICAgICAgZm9udC1zaXplPSIzOCIgCiAgICAgICAgZm9udC1zdHlsZT0iaXRhbGljIgogICAgICAgIGZvbnQtd2VpZ2h0PSJib2xkIgogICAgICAgIGZpbGw9IndoaXRlIiAKICAgICAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5DYXJyaWVyPC90ZXh0PgogIAogIDwhLS0gU25vd2ZsYWtlIGFzdGVyaXNrIC0tPgogIDx0ZXh0IHg9IjMxMCIgeT0iMTA1IiAKICAgICAgICBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIAogICAgICAgIGZvbnQtc2l6ZT0iMjgiIAogICAgICAgIGZpbGw9IndoaXRlIiAKICAgICAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIj7inLs8L3RleHQ+CgogIDwhLS0gVFJBTlNJQ09MRCB0ZXh0IGJlbG93IG92YWwgLS0+CiAgPHRleHQgeD0iMjAwIiB5PSIxNjUiIAogICAgICAgIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgCiAgICAgICAgZm9udC1zaXplPSIyNiIgCiAgICAgICAgZm9udC13ZWlnaHQ9ImJvbGQiCiAgICAgICAgbGV0dGVyLXNwYWNpbmc9IjQiCiAgICAgICAgZmlsbD0iIzAwMkI1QiIgCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSI+VFJBTlNJQ09MRDwvdGV4dD4KPC9zdmc+"
+LOGO_URL  = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgMjAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjIwMCI+CiAgPHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIyMDAiIHJ4PSIxNiIgZmlsbD0id2hpdGUiLz4KICA8ZWxsaXBzZSBjeD0iMjAwIiBjeT0iOTAiIHJ4PSIxMzAiIHJ5PSI1NSIgZmlsbD0iIzAwMkI1QiIvPgogIDx0ZXh0IHg9IjIwMCIgeT0iMTAwIiBmb250LWZhbWlseT0iR2VvcmdpYSwgc2VyaWYiIGZvbnQtc2l6ZT0iMzgiIGZvbnQtc3R5bGU9Iml0YWxpYyIKICAgICAgICBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkNhcnJpZXI8L3RleHQ+CiAgPHRleHQgeD0iMzEwIiB5PSIxMDUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIKICAgICAgICBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+4py7PC90ZXh0PgogIDx0ZXh0IHg9IjIwMCIgeT0iMTY1IiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjYiCiAgICAgICAgZm9udC13ZWlnaHQ9ImJvbGQiIGxldHRlci1zcGFjaW5nPSI0IiBmaWxsPSIjMDAyQjVCIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5UUkFOU0lDT0xEPC90ZXh0Pgo8L3N2Zz4="
 SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
@@ -71,6 +71,20 @@ footer {{ display: none !important; }}
 [data-testid="manage-app-button"] {{ display: none !important; }}
 [data-testid="stStatusWidget"] {{ display: none !important; }}
 .block-container {{ padding-top: 1.5rem !important; }}
+
+/* ══ FORZAR SIDEBAR SIEMPRE ABIERTO ══ */
+section[data-testid="stSidebar"] {{
+    transform: none !important;
+    visibility: visible !important;
+    width: 21rem !important;
+    min-width: 21rem !important;
+    display: block !important;
+    transition: transform 0.28s ease !important;
+}}
+button[data-testid="baseButton-header"],
+[data-testid="stSidebarCollapsedControl"] {{
+    display: none !important;
+}}
 
 /* ══ BASE ══ */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -324,68 +338,80 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
 # Inyecta el botón hamburguesa en el DOM y el JS que controla el sidebar de Streamlit.
 # Funciona tanto en navegador móvil como en APK WebView.
 st.markdown("""
-<div id="sidebar-fab" onclick="toggleSidebar()" title="Abrir menú">
+<script>
+(function() {
+    // ── 1. Borra el estado del sidebar guardado en localStorage ──
+    // Streamlit guarda si el sidebar estaba abierto/cerrado y lo recuerda.
+    // Esto lo limpia para que SIEMPRE arranque abierto.
+    function clearSidebarStorage() {
+        try {
+            Object.keys(localStorage).forEach(function(k) {
+                if (/sidebar/i.test(k)) localStorage.removeItem(k);
+            });
+            Object.keys(sessionStorage).forEach(function(k) {
+                if (/sidebar/i.test(k)) sessionStorage.removeItem(k);
+            });
+        } catch(e) {}
+    }
+    clearSidebarStorage();
+
+    // ── 2. Fuerza el sidebar abierto via DOM (retry 15 veces) ──
+    function forceSidebarOpen(n) {
+        var sb = document.querySelector('section[data-testid="stSidebar"]');
+        if (!sb) {
+            if (n > 0) setTimeout(function() { forceSidebarOpen(n - 1); }, 500);
+            return;
+        }
+        sb.style.setProperty('transform',  'none',    'important');
+        sb.style.setProperty('visibility', 'visible', 'important');
+        sb.style.setProperty('width',      '21rem',   'important');
+        sb.style.setProperty('min-width',  '21rem',   'important');
+        sb.style.setProperty('display',    'block',   'important');
+
+        // Ocultar botón de colapso de Streamlit
+        ['button[data-testid="baseButton-header"]',
+         '[data-testid="stSidebarCollapsedControl"] button'].forEach(function(sel) {
+            var btn = document.querySelector(sel);
+            if (btn) btn.style.display = 'none';
+        });
+    }
+    setTimeout(function() { forceSidebarOpen(15); }, 600);
+
+    // ── 3. FAB hamburguesa (solo móvil / APK WebView) ──
+    var sidebarOpen = true;
+
+    window.toggleSidebar = function() {
+        var sb = document.querySelector('section[data-testid="stSidebar"]');
+        if (!sb) return;
+        if (sidebarOpen) {
+            sb.style.setProperty('transform', 'translateX(-110%)', 'important');
+        } else {
+            sb.style.setProperty('transform',  'none',    'important');
+            sb.style.setProperty('visibility', 'visible', 'important');
+            sb.style.setProperty('width',      '21rem',   'important');
+        }
+        sidebarOpen = !sidebarOpen;
+    };
+
+    // Mostrar FAB solo en móvil/APK (< 992px)
+    function updateFabVisibility() {
+        var fab = document.getElementById('sidebar-fab');
+        if (!fab) return;
+        fab.style.display = window.innerWidth < 992 ? 'flex' : 'none';
+    }
+    window.addEventListener('resize', updateFabVisibility);
+    setTimeout(updateFabVisibility, 1000);
+})();
+</script>
+
+<div id="sidebar-fab" onclick="toggleSidebar()" title="Menú"
+     style="display:none">
   <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <line x1="3" y1="6"  x2="21" y2="6"/>
     <line x1="3" y1="12" x2="21" y2="12"/>
     <line x1="3" y1="18" x2="21" y2="18"/>
   </svg>
 </div>
-<script>
-(function() {
-    function getSidebar() {
-        return document.querySelector('section[data-testid="stSidebar"]');
-    }
-    function getSidebarCollapseBtn() {
-        // Streamlit renders a collapse button inside the sidebar
-        return document.querySelector('button[data-testid="collapsedControl"]') ||
-               document.querySelector('button[kind="header"]') ||
-               document.querySelector('[data-testid="stSidebarCollapsedControl"] button');
-    }
-    window.toggleSidebar = function() {
-        var sidebar = getSidebar();
-        if (!sidebar) return;
-        var collapsed = sidebar.getAttribute('aria-expanded') === 'false' ||
-                        sidebar.classList.contains('st-emotion-cache-hidden') ||
-                        sidebar.style.transform === 'translateX(-100%)' ||
-                        getComputedStyle(sidebar).transform.includes('-') ||
-                        sidebar.offsetWidth < 10;
-        if (collapsed) {
-            // Try Streamlit's native collapse button first
-            var btn = document.querySelector('[data-testid="stSidebarCollapsedControl"] button') ||
-                      document.querySelector('button[data-testid="collapsedControl"]');
-            if (btn) {
-                btn.click();
-            } else {
-                // Fallback: force open via inline style
-                sidebar.style.cssText = 'transform:none!important;visibility:visible!important;width:21rem!important;';
-            }
-        } else {
-            var btn2 = sidebar.querySelector('button[data-testid="baseButton-header"]') ||
-                       sidebar.querySelector('button[aria-label*="close"], button[aria-label*="Close"], button[aria-label*="cerrar"]');
-            if (btn2) {
-                btn2.click();
-            } else {
-                sidebar.style.cssText = 'transform:translateX(-100%)!important;';
-            }
-        }
-    };
-    // Show FAB only when sidebar is hidden (mobile/APK)
-    function updateFabVisibility() {
-        var fab = document.getElementById('sidebar-fab');
-        if (!fab) return;
-        if (window.innerWidth >= 992) { fab.style.display = 'none'; return; }
-        var sidebar = getSidebar();
-        if (!sidebar) { fab.style.display = 'flex'; return; }
-        var rect = sidebar.getBoundingClientRect();
-        fab.style.display = (rect.left < -50 || rect.width < 10) ? 'flex' : 'none';
-    }
-    // Run periodically to track sidebar state
-    setInterval(updateFabVisibility, 600);
-    window.addEventListener('resize', updateFabVisibility);
-    setTimeout(updateFabVisibility, 1500);
-})();
-</script>
 """, unsafe_allow_html=True)
 
 # ==================== BASE DE DATOS ====================
@@ -1393,4 +1419,3 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
-

@@ -11,6 +11,7 @@ import os
 import json
 
 # ==================== CONFIGURACIÓN INICIAL ====================
+# FUENTE: Código 1 (con page_icon y título mejorado)
 st.set_page_config(
     page_title="Carrier Transicold – Sistema Operativo",
     layout="wide",
@@ -23,6 +24,7 @@ ahora_tj    = datetime.now(tijuana_tz)
 fecha_hoy   = ahora_tj.strftime('%Y-%m-%d')
 hora_actual = ahora_tj.strftime('%H:%M:%S')
 
+# Paleta de colores
 CARRIER_BLUE    = "#002B5B"
 CARRIER_ACCENT  = "#0057A8"
 CARRIER_LIGHT   = "#E8F0FB"
@@ -54,7 +56,10 @@ ACTIVIDADES_CARRIER = [
 
 MAX_FOTOS = 100
 
+
 # ==================== CSS PREMIUM ====================
+# FUENTE: Código 1 (diseño premium con Inter + animaciones)
+# Conservado íntegramente — es superior al del Código 2
 st.markdown(f"""
 <style>
 /* ══ OCULTAR BRANDING STREAMLIT ══ */
@@ -88,8 +93,7 @@ section[data-testid="stSidebar"] .stRadio > label {{
     color: white !important; font-weight: 600; font-size: 0.72rem; letter-spacing: 1.5px;
 }}
 section[data-testid="stSidebar"] .stRadio [data-testid="stMarkdownContainer"] p {{
-    color: #d0ddf5 !important; font-size: 0.9rem; font-weight: 500;
-    padding: 2px 0;
+    color: #d0ddf5 !important; font-size: 0.9rem; font-weight: 500; padding: 2px 0;
 }}
 section[data-testid="stSidebar"] hr {{ border-color: rgba(255,255,255,0.15) !important; }}
 section[data-testid="stSidebar"] button {{
@@ -106,7 +110,7 @@ section[data-testid="stSidebar"] button:hover {{
     transform: translateX(2px) !important;
 }}
 
-/* ══ HEADER BADGE ══ */
+/* ══ HEADER ══ */
 .main-header {{
     font-size: 1.75rem; font-weight: 800; color: {CARRIER_BLUE};
     border-bottom: 3px solid {CARRIER_ACCENT};
@@ -120,8 +124,7 @@ section[data-testid="stSidebar"] button:hover {{
     padding: 9px 14px; margin: 22px 0 14px 0;
     background: white; border-radius: 0 8px 8px 0;
     box-shadow: 0 2px 8px rgba(0,43,91,0.07);
-    font-family: 'Inter', sans-serif;
-    letter-spacing: 0.2px;
+    font-family: 'Inter', sans-serif; letter-spacing: 0.2px;
 }}
 
 /* ══ KPI CARDS ══ */
@@ -135,14 +138,10 @@ section[data-testid="stSidebar"] button:hover {{
 }}
 .kpi-wrap::after {{
     content: ''; position: absolute; top: 0; right: 0;
-    width: 60px; height: 60px;
-    background: rgba(0,87,168,0.04);
+    width: 60px; height: 60px; background: rgba(0,87,168,0.04);
     border-radius: 0 0 0 60px;
 }}
-.kpi-wrap:hover {{
-    transform: translateY(-3px);
-    box-shadow: 0 8px 28px rgba(0,43,91,0.14);
-}}
+.kpi-wrap:hover {{ transform: translateY(-3px); box-shadow: 0 8px 28px rgba(0,43,91,0.14); }}
 .kpi-wrap.green  {{ border-top-color: {CARRIER_SUCCESS}; }}
 .kpi-wrap.amber  {{ border-top-color: {CARRIER_WARN}; }}
 .kpi-wrap.red    {{ border-top-color: {CARRIER_DANGER}; }}
@@ -164,9 +163,8 @@ section[data-testid="stSidebar"] button:hover {{
 .time-badge {{
     background: {CARRIER_BLUE}; color: white;
     padding: 6px 16px; border-radius: 24px;
-    font-size: 0.82rem; font-weight: 600;
-    float: right; margin-top: 2px;
-    box-shadow: 0 2px 8px rgba(0,43,91,0.25);
+    font-size: 0.82rem; font-weight: 600; float: right;
+    margin-top: 2px; box-shadow: 0 2px 8px rgba(0,43,91,0.25);
 }}
 
 /* ══ EXPANDERS ══ */
@@ -176,9 +174,7 @@ div[data-testid="stExpander"] {{
     border: 1px solid #e2e8f2; margin-bottom: 10px;
     transition: box-shadow 0.2s ease;
 }}
-div[data-testid="stExpander"]:hover {{
-    box-shadow: 0 4px 18px rgba(0,43,91,0.1);
-}}
+div[data-testid="stExpander"]:hover {{ box-shadow: 0 4px 18px rgba(0,43,91,0.1); }}
 
 /* ══ BUTTONS ══ */
 .stButton > button {{
@@ -186,8 +182,7 @@ div[data-testid="stExpander"]:hover {{
     transition: all 0.2s ease; letter-spacing: 0.2px;
 }}
 .stButton > button:hover {{
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0,43,91,0.2);
+    transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,43,91,0.2);
 }}
 
 /* ══ FILE UPLOADER ══ */
@@ -228,12 +223,7 @@ div[data-testid="stForm"] {{
     color: #166534; font-weight: 600; margin-top: 10px;
 }}
 
-/* ══ INVENTARIO TABLE ══ */
-.inv-table-wrap {{
-    background: white; border-radius: 14px;
-    box-shadow: 0 4px 20px rgba(0,43,91,0.08);
-    border: 1px solid #e2e8f2; overflow: hidden;
-}}
+/* ══ INVENTARIO ══ */
 .inv-info-bar {{
     background: linear-gradient(90deg, {CARRIER_BLUE} 0%, {CARRIER_ACCENT} 100%);
     color: white; padding: 14px 20px; border-radius: 12px;
@@ -242,12 +232,6 @@ div[data-testid="stForm"] {{
 }}
 
 /* ══ TOMA DE VALORES ══ */
-.tv-card {{
-    background: white; border-radius: 12px;
-    border: 1px solid #e2e8f2;
-    box-shadow: 0 2px 10px rgba(0,43,91,0.06);
-    padding: 16px 20px; margin-bottom: 12px;
-}}
 .tv-field-badge {{
     background: {CARRIER_LIGHT}; border: 1px solid #c3d4f0;
     border-radius: 8px; padding: 6px 12px;
@@ -258,8 +242,7 @@ div[data-testid="stForm"] {{
 /* ══ LOGIN ══ */
 .login-card {{
     background: white; padding: 36px 40px; border-radius: 20px;
-    box-shadow: 0 12px 40px rgba(0,43,91,0.18);
-    border: 1px solid #e2e8f2;
+    box-shadow: 0 12px 40px rgba(0,43,91,0.18); border: 1px solid #e2e8f2;
 }}
 
 /* ══ SIDEBAR USER CHIP ══ */
@@ -283,12 +266,10 @@ div[data-testid="stForm"] {{
     box-shadow: 0 2px 8px rgba(0,43,91,0.05);
 }}
 
-/* ══ SIDEBAR MENU ITEMS ══ */
+/* ══ SIDEBAR MENU HOVER ══ */
 section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
-    padding: 8px 12px !important;
-    border-radius: 8px !important;
-    margin: 2px 0 !important;
-    transition: background 0.15s !important;
+    padding: 8px 12px !important; border-radius: 8px !important;
+    margin: 2px 0 !important; transition: background 0.15s !important;
 }}
 section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {{
     background: rgba(255,255,255,0.1) !important;
@@ -305,6 +286,7 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
 
 
 # ==================== BASE DE DATOS ====================
+# FUENTE: Ambos códigos (idéntica lógica; se usa la del Código 1 que incluye init_extra_tables)
 def _get_db_config():
     env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
     if env_host:
@@ -358,7 +340,7 @@ def execute_write(query, params=None):
     return False
 
 def init_extra_tables():
-    """Crea las tablas adicionales si no existen."""
+    """Crea las tablas adicionales si no existen (necesarias para Inventarios y Toma de Valores)."""
     queries = [
         """CREATE TABLE IF NOT EXISTS inventario_data (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -399,12 +381,17 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# Recuperar sesión desde query params (sobrevive el autorefresh)
 params = st.query_params
 if not st.session_state.login and params.get("u") and params.get("r"):
     st.session_state["login"] = True
     st.session_state["user"]  = params["u"]
     st.session_state["role"]  = params["r"]
 
+# ── Autorefresh inteligente ──
+# FUENTE: Ambos códigos tienen la misma lógica JS — se conserva íntegra.
+# Espera 30s para refrescar, pero cancela si el usuario está scrolleando.
+# Reanuda el contador 5s después de que el scroll se detiene.
 if st.session_state.get("login"):
     st.markdown("""
     <script>
@@ -412,13 +399,26 @@ if st.session_state.get("login"):
         var REFRESH_MS  = 30000;
         var SCROLL_WAIT = 5000;
         var refreshTimer = null, scrollEndTimer = null, userScrolling = false;
-        function doRefresh() { if (!userScrolling) window.location.reload(); }
-        function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(doRefresh, REFRESH_MS); }
+
+        function doRefresh() {
+            if (!userScrolling) window.location.reload();
+        }
+
+        function scheduleRefresh() {
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(doRefresh, REFRESH_MS);
+        }
+
         window.addEventListener('scroll', function() {
             userScrolling = true;
-            clearTimeout(refreshTimer); clearTimeout(scrollEndTimer);
-            scrollEndTimer = setTimeout(function() { userScrolling = false; scheduleRefresh(); }, SCROLL_WAIT);
+            clearTimeout(refreshTimer);
+            clearTimeout(scrollEndTimer);
+            scrollEndTimer = setTimeout(function() {
+                userScrolling = false;
+                scheduleRefresh();
+            }, SCROLL_WAIT);
         }, { passive: true });
+
         scheduleRefresh();
     })();
     </script>
@@ -429,17 +429,18 @@ if st.session_state.get("login"):
 if not st.session_state.login:
     st.markdown(
         f'<div style="text-align:center;padding:40px 0 20px;">'
-        f'<img src="{LOGO_URL}" width="480" style="border-radius:12px;box-shadow:0 8px 32px rgba(0,43,91,0.18);">'
-        f'</div>',
+        f'<img src="{LOGO_URL}" width="480" style="border-radius:12px;'
+        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);"></div>',
         unsafe_allow_html=True,
     )
     _, col_c, _ = st.columns([1, 1.2, 1])
     with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.markdown(
-            f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:6px;font-family:Inter,sans-serif;font-weight:800;'>"
-            "Carrier Transicold</h3>"
-            f"<p style='text-align:center;color:#6b7280;margin-bottom:24px;font-size:0.9rem;'>Sistema Operativo — Panel de Acceso</p>",
+            f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:6px;"
+            f"font-family:Inter,sans-serif;font-weight:800;'>Carrier Transicold</h3>"
+            f"<p style='text-align:center;color:#6b7280;margin-bottom:24px;font-size:0.9rem;'>"
+            f"Sistema Operativo — Panel de Acceso</p>",
             unsafe_allow_html=True,
         )
         with st.form("login_form"):
@@ -471,10 +472,12 @@ if not st.session_state.login:
 
 
 # ==================== SIDEBAR ====================
+# FUENTE: Estructura del Código 2 (sin divs HTML envolviendo el logo → funciona en APK)
+#         Contenido y menú del Código 1 (incluye 📦 Inventarios para admin)
 with st.sidebar:
-    st.markdown(f"<div style='padding:10px 8px 0;'>", unsafe_allow_html=True)
+    # ⚠️ CLAVE: st.image directo, sin st.markdown(<div>) alrededor.
+    # Esto es lo que permite que el sidebar funcione correctamente en la APK.
     st.image(LOGO_URL, width=210)
-    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown(
         f"<p style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"
@@ -553,7 +556,6 @@ if menu == "📊 Dashboard Ejecutivo":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Estadísticas y gráficas ──
     if not df_a.empty:
         st.markdown('<div class="section-title">📈 Estadísticas por Técnico</div>', unsafe_allow_html=True)
         stats = df_a.groupby("tecnico").agg(
@@ -595,7 +597,6 @@ if menu == "📊 Dashboard Ejecutivo":
             )
             st.plotly_chart(fig_p, use_container_width=True)
 
-    # ── Tabla estatus por unidad ──
     st.markdown('<div class="section-title">📋 Estatus de Proceso por Unidad</div>', unsafe_allow_html=True)
     if unid:
         completadas_raw = execute_read(
@@ -610,7 +611,6 @@ if menu == "📊 Dashboard Ejecutivo":
             status_data.append(row)
         st.dataframe(pd.DataFrame(status_data), use_container_width=True, hide_index=True, height=340)
 
-    # ── Descarga de evidencias ──
     st.markdown('<div class="section-title">📂 Descarga de Evidencias por Unidad</div>', unsafe_allow_html=True)
     if unid:
         col_ev1, col_ev2 = st.columns([3, 1])
@@ -634,7 +634,6 @@ if menu == "📊 Dashboard Ejecutivo":
         else:
             st.info("Sin fotos cargadas para esta unidad.")
 
-    # ── Reporte maestro Excel ──
     st.markdown('<div class="section-title">📥 Reportes y Descargas</div>', unsafe_allow_html=True)
     if unid:
         df_u = pd.DataFrame(unid)
@@ -657,6 +656,7 @@ if menu == "📊 Dashboard Ejecutivo":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== INVENTARIOS ====================
+# FUENTE: Código 1 (exclusivo — no existe en Código 2)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "📦 Inventarios":
     st.markdown(
@@ -665,7 +665,6 @@ elif menu == "📦 Inventarios":
         unsafe_allow_html=True,
     )
 
-    # ── Cargar columnas desde DB ──
     def get_inv_columnas():
         rows = execute_read(
             "SELECT col_nombre, col_orden FROM inventario_columnas "
@@ -697,8 +696,7 @@ elif menu == "📦 Inventarios":
                 data_dict[fi] = {c: "" for c in columnas}
             if r["col_nombre"] in columnas:
                 data_dict[fi][r["col_nombre"]] = r["valor"] or ""
-        df = pd.DataFrame([data_dict[k] for k in sorted(data_dict.keys())], columns=columnas)
-        return df
+        return pd.DataFrame([data_dict[k] for k in sorted(data_dict.keys())], columns=columnas)
 
     def save_inv_data(df):
         execute_write("DELETE FROM inventario_data WHERE tabla_nombre='Principal'")
@@ -711,15 +709,12 @@ elif menu == "📦 Inventarios":
                 )
 
     columnas = get_inv_columnas()
-
-    # Inicializar columnas por defecto si no hay ninguna
     if not columnas:
         columnas = ["Código", "Descripción", "Cantidad", "Unidad", "Ubicación", "Estado"]
         save_inv_columnas(columnas)
 
     df_inv = get_inv_data(columnas)
 
-    # ── Barra de herramientas ──
     st.markdown(
         f'<div class="inv-info-bar">🗄 Inventario Principal &nbsp;·&nbsp; '
         f'{len(df_inv)} registros &nbsp;·&nbsp; {len(columnas)} columnas</div>',
@@ -729,7 +724,6 @@ elif menu == "📦 Inventarios":
     tab1, tab2 = st.tabs(["📋 Tabla de Inventario", "⚙️ Configurar Columnas"])
 
     with tab1:
-        # ── Controles de filas ──
         col_add, col_del, col_save = st.columns([1, 1, 2])
         with col_add:
             if st.button("➕ Agregar Fila", use_container_width=True):
@@ -738,11 +732,12 @@ elif menu == "📦 Inventarios":
                 save_inv_data(df_inv)
                 st.success("✅ Fila agregada.")
                 st.rerun()
-
         with col_del:
             if len(df_inv) > 0:
-                fila_del = st.number_input("Eliminar fila #", min_value=1, max_value=max(len(df_inv), 1),
-                                           value=1, step=1, key="fila_del_n")
+                fila_del = st.number_input(
+                    "Eliminar fila #", min_value=1, max_value=max(len(df_inv), 1),
+                    value=1, step=1, key="fila_del_n"
+                )
                 if st.button("🗑 Eliminar Fila", use_container_width=True):
                     df_inv = df_inv.drop(index=fila_del - 1).reset_index(drop=True)
                     save_inv_data(df_inv)
@@ -754,42 +749,32 @@ elif menu == "📦 Inventarios":
         if df_inv.empty:
             st.info("📋 La tabla está vacía. Agrega filas con el botón de arriba.")
         else:
-            # ── Editor de tabla ──
             df_editado = st.data_editor(
-                df_inv,
-                use_container_width=True,
-                num_rows="dynamic",
-                hide_index=False,
-                key="inv_editor",
+                df_inv, use_container_width=True, num_rows="dynamic",
+                hide_index=False, key="inv_editor",
             )
-
             if st.button("💾 Guardar Cambios del Inventario", use_container_width=True, type="primary"):
                 save_inv_data(df_editado)
                 st.success("✅ Inventario guardado correctamente.")
                 st.rerun()
 
-            # ── Exportar ──
             buf_inv = io.BytesIO()
             with pd.ExcelWriter(buf_inv, engine="openpyxl") as w:
                 df_inv.to_excel(w, index=False, sheet_name="Inventario")
             st.download_button(
                 "📥 Exportar Inventario a Excel",
-                buf_inv.getvalue(),
-                f"Inventario_Carrier_{fecha_hoy}.xlsx",
+                buf_inv.getvalue(), f"Inventario_Carrier_{fecha_hoy}.xlsx",
                 use_container_width=True,
             )
 
     with tab2:
         st.markdown('<div class="section-title">⚙️ Administrar Columnas</div>', unsafe_allow_html=True)
-
-        # ── Agregar columna ──
         with st.form("add_col_form"):
             nueva_col = st.text_input("Nombre de nueva columna")
             if st.form_submit_button("➕ Agregar Columna", type="primary"):
                 if nueva_col and nueva_col not in columnas:
                     columnas.append(nueva_col)
                     save_inv_columnas(columnas)
-                    # Agregar campo vacío a todas las filas
                     if not df_inv.empty:
                         df_inv[nueva_col] = ""
                         save_inv_data(df_inv)
@@ -800,7 +785,6 @@ elif menu == "📦 Inventarios":
                 else:
                     st.warning("⚠️ Escribe un nombre válido.")
 
-        # ── Lista columnas existentes ──
         st.markdown('<div class="section-title">📋 Columnas Actuales</div>', unsafe_allow_html=True)
         if columnas:
             for i, col in enumerate(columnas):
@@ -821,7 +805,6 @@ elif menu == "📦 Inventarios":
                             save_inv_columnas(columnas)
                             st.success(f'✅ Renombrado a "{nuevo_nombre}".')
                             st.rerun()
-
                 col_d1, col_d2 = st.columns([5, 1])
                 with col_d2:
                     if len(columnas) > 1:
@@ -840,6 +823,7 @@ elif menu == "📦 Inventarios":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== CONTROL DE ASIGNACIONES (Admin) ====================
+# FUENTE: Ambos códigos (lógica idéntica; se conserva la del Código 1)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Control de Asignaciones":
     st.markdown('<div class="main-header">🎯 Gestión de Órdenes de Trabajo</div>', unsafe_allow_html=True)
@@ -884,13 +868,16 @@ elif menu == "🎯 Control de Asignaciones":
                     if dup_comp:
                         tecnicos_comp = ", ".join([d["tecnico"] for d in dup_comp])
                         st.markdown(
-                            f'<div class="bloqueo-card"><p>⛔ ACTIVIDAD YA COMPLETADA — Por: <b>{tecnicos_comp}</b>. Aprobar permite una repetición.</p></div>',
+                            f'<div class="bloqueo-card"><p>⛔ ACTIVIDAD YA COMPLETADA — Por: '
+                            f'<b>{tecnicos_comp}</b>. Aprobar permite una repetición.</p></div>',
                             unsafe_allow_html=True,
                         )
                     if dup_activa:
                         for da in dup_activa:
                             st.markdown(
-                                f'<div class="bloqueo-card"><p>⚠️ TAREA DUPLICADA — <b>{da["tecnico"]}</b> ya tiene esta actividad en estado <b>{da["estado"]}</b>.</p></div>',
+                                f'<div class="bloqueo-card"><p>⚠️ TAREA DUPLICADA — '
+                                f'<b>{da["tecnico"]}</b> ya tiene esta actividad en estado '
+                                f'<b>{da["estado"]}</b>.</p></div>',
                                 unsafe_allow_html=True,
                             )
                 if col_ap.button("✅ Aprobar", key=f"ap_{s['id']}", use_container_width=True):
@@ -901,7 +888,6 @@ elif menu == "🎯 Control de Asignaciones":
                     st.rerun()
             st.markdown("<hr style='margin:6px 0;border-color:#e5eaf2;'>", unsafe_allow_html=True)
 
-    # Asignación manual
     st.markdown('<div class="section-title">➕ Asignación Directa</div>', unsafe_allow_html=True)
     u_db = execute_read("SELECT unit_number, id_lote FROM unidades")
     t_db = execute_read("SELECT username FROM users WHERE role='tecnico'")
@@ -922,6 +908,8 @@ elif menu == "🎯 Control de Asignaciones":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== MIS TAREAS (Técnico) ====================
+# FUENTE: Código 2 para Evidencia (feedback detallado de progreso)
+#         Código 1 para Toma de Valores (exclusivo)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">🎯 Mis Actividades</div>', unsafe_allow_html=True)
@@ -958,6 +946,7 @@ elif menu == "🎯 Mis Tareas":
                 )
 
                 # ── EVIDENCIA ──
+                # FUENTE: Código 2 (barra de progreso con nombre de archivo, mejor UX)
                 if t["actividad_id"].lower() == "evidencia":
                     fotos_prev = execute_read(
                         "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
@@ -985,6 +974,7 @@ elif menu == "🎯 Mis Tareas":
                             accept_multiple_files=True,
                             type=["jpg", "jpeg", "png"],
                             key=f"fup_{t['id']}",
+                            help=f"Máximo {restantes} en esta carga.",
                         )
                         if archivos:
                             if len(archivos) > restantes:
@@ -1001,45 +991,62 @@ elif menu == "🎯 Mis Tareas":
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button(f"💾 Guardar {len(archivos)} foto(s)", key=f"savef_{t['id']}",
                                          use_container_width=True, type="primary"):
-                                barra = st.progress(0)
+                                # Barra con nombre del archivo — FUENTE: Código 2
+                                barra = st.progress(0, text="Iniciando...")
+                                errores = 0
                                 for i, arc in enumerate(archivos):
                                     arc.seek(0)
-                                    execute_write(
-                                        "INSERT INTO evidencias (unit_number, nombre_archivo, contenido, tecnico) "
+                                    ok = execute_write(
+                                        "INSERT INTO evidencias "
+                                        "(unit_number, nombre_archivo, contenido, tecnico) "
                                         "VALUES (%s,%s,%s,%s)",
                                         (t["unidad"], arc.name, arc.read(), st.session_state.user),
                                     )
-                                    barra.progress((i + 1) / len(archivos))
-                                st.success(f"✅ {len(archivos)} foto(s) guardada(s).")
+                                    if not ok:
+                                        errores += 1
+                                    barra.progress(
+                                        (i + 1) / len(archivos),
+                                        text=f"Guardando {i+1} de {len(archivos)}: {arc.name[:30]}",
+                                    )
+                                if errores == 0:
+                                    st.success(f"✅ {len(archivos)} foto(s) guardada(s) correctamente.")
+                                else:
+                                    st.warning(f"⚠️ {len(archivos)-errores} guardadas, {errores} fallaron.")
                                 st.rerun()
 
                     st.markdown("---")
-                    if st.button("✅ Finalizar Evidencia", key=f"finev_{t['id']}", use_container_width=True):
-                        execute_write(
-                            "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                            (datetime.now(tijuana_tz), t["id"]),
+                    col_fin1, col_fin2 = st.columns([3, 1])
+                    with col_fin1:
+                        st.markdown(
+                            f"<p style='font-size:.85rem;color:#6b7280;margin:6px 0 0;'>"
+                            f"Al finalizar se cerrará la tarea. Total guardadas: <b>{total_prev}</b></p>",
+                            unsafe_allow_html=True,
                         )
-                        st.success("✅ Evidencia completada.")
-                        st.rerun()
+                    with col_fin2:
+                        if st.button("✅ Finalizar", key=f"finev_{t['id']}", use_container_width=True):
+                            execute_write(
+                                "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
+                                (datetime.now(tijuana_tz), t["id"]),
+                            )
+                            st.success("✅ Evidencia completada.")
+                            st.rerun()
 
                 # ── TOMA DE VALORES ──
+                # FUENTE: Código 1 (exclusivo — campos configurables desde la DB)
                 elif t["actividad_id"].lower() == "toma de valores":
                     st.markdown(
                         '<div class="tv-field-badge">📊 Registro de Valores del Equipo</div>',
                         unsafe_allow_html=True,
                     )
 
-                    # Cargar campos configurados
                     campos_tv = execute_read(
                         "SELECT campo_nombre, campo_orden FROM toma_valores_campos ORDER BY campo_orden ASC"
                     )
                     campos_lista = [c["campo_nombre"] for c in campos_tv]
 
-                    # Si no hay campos, sugerir defaults
                     if not campos_lista:
-                        st.info("⚙️ No hay campos configurados. El administrador puede agregarlos abajo.")
+                        st.info("⚙️ No hay campos configurados. Agrégalos en la sección de abajo.")
                     else:
-                        # Cargar datos existentes
                         datos_previos = execute_read(
                             "SELECT campo_nombre, valor FROM toma_valores_datos WHERE asignacion_id=%s",
                             (t["id"],),
@@ -1058,13 +1065,10 @@ elif menu == "🎯 Mis Tareas":
                             for i, campo in enumerate(campos_lista):
                                 target = col_a if i < mid else col_b
                                 valores_ingresados[campo] = target.text_input(
-                                    campo,
-                                    value=datos_dict.get(campo, ""),
-                                    key=f"tv_{t['id']}_{i}",
+                                    campo, value=datos_dict.get(campo, ""), key=f"tv_{t['id']}_{i}"
                                 )
 
                             if st.form_submit_button("💾 Guardar Valores", use_container_width=True, type="primary"):
-                                # Eliminar datos previos y volver a insertar
                                 execute_write(
                                     "DELETE FROM toma_valores_datos WHERE asignacion_id=%s", (t["id"],)
                                 )
@@ -1081,7 +1085,6 @@ elif menu == "🎯 Mis Tareas":
                                 st.success("✅ Valores guardados y tarea completada.")
                                 st.rerun()
 
-                    # ── Configurar campos de Toma de Valores (visible para técnico también) ──
                     with st.expander("⚙️ Configurar campos de Toma de Valores"):
                         col_cf1, col_cf2 = st.columns([3, 1])
                         with col_cf1:
@@ -1109,6 +1112,7 @@ elif menu == "🎯 Mis Tareas":
                                     st.rerun()
 
                 # ── TOMA DE SERIES ──
+                # FUENTE: Ambos códigos (idéntica)
                 elif t["actividad_id"].lower() == "toma de series":
                     with st.form(f"ser_{t['id']}"):
                         st.markdown(
@@ -1148,6 +1152,7 @@ elif menu == "🎯 Mis Tareas":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== NUEVA SOLICITUD (Técnico) ====================
+# FUENTE: Código 2 (flujo de validación más explícito y claro)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">🔔 Solicitar Actividad</div>', unsafe_allow_html=True)
@@ -1159,6 +1164,8 @@ elif menu == "🔔 Nueva Solicitud":
         a_sel = st.selectbox("Actividad", ACTIVIDADES_CARRIER)
         if st.form_submit_button("📤 Enviar Solicitud", use_container_width=True, type="primary"):
             unidad_sel = u_sel.split(" - ")[1]
+
+            # Validación 1: tarea ya activa
             activa = execute_read(
                 "SELECT id, estado FROM asignaciones "
                 "WHERE tecnico=%s AND unidad=%s AND actividad_id=%s "
@@ -1177,6 +1184,7 @@ elif menu == "🔔 Nueva Solicitud":
                     f"({etiquetas.get(estado_act, estado_act)})."
                 )
             else:
+                # Validación 2: ya fue completada
                 completada = execute_read(
                     "SELECT tecnico FROM asignaciones "
                     "WHERE unidad=%s AND actividad_id=%s AND estado='completada'",
@@ -1196,7 +1204,6 @@ elif menu == "🔔 Nueva Solicitud":
                 st.toast("✅ Solicitud enviada correctamente")
                 st.rerun()
 
-    # Historial
     st.markdown('<div class="section-title">📋 Mis Solicitudes Recientes</div>', unsafe_allow_html=True)
     historial = execute_read(
         "SELECT unidad, actividad_id, estado, fecha_inicio, fecha_fin "
@@ -1226,6 +1233,7 @@ elif menu == "🔔 Nueva Solicitud":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== REGISTRO DE UNIDADES (Admin) ====================
+# FUENTE: Ambos códigos (idéntica)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">📸 Registro Maestro de Unidades</div>', unsafe_allow_html=True)
@@ -1254,6 +1262,7 @@ elif menu == "📸 Registro de Unidades":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== GESTIÓN DE USUARIOS (Admin) ====================
+# FUENTE: Ambos códigos (idéntica)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "👥 Gestión de Usuarios":
     st.markdown('<div class="main-header">👥 Usuarios del Sistema</div>', unsafe_allow_html=True)
@@ -1281,3 +1290,4 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+

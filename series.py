@@ -33,6 +33,14 @@ CARRIER_WARN    = "#d97706"
 CARRIER_DANGER  = "#dc2626"
 
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg"
+# Logo alternativo local (base64) — se genera automáticamente si el archivo existe
+import base64 as _b64, pathlib as _pl
+_logo_path = _pl.Path(__file__).parent / "carrierlogo.jpg"
+if _logo_path.exists():
+    _logo_b64 = _b64.b64encode(_logo_path.read_bytes()).decode()
+    LOGO_DATA_URI = f"data:image/jpeg;base64,{_logo_b64}"
+else:
+    LOGO_DATA_URI = LOGO_URL
 SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
@@ -617,18 +625,37 @@ if st.session_state.get("login"):
         // ═══════════════════════════════════════════════
         // DETECCIÓN DE CAMPOS CON CONTENIDO NO GUARDADO
         // ═══════════════════════════════════════════════
+        // FIX v2: Ignora inputs de tipo number/range/checkbox/radio (Streamlit los
+        // usa para selectbox/slider y SIEMPRE tienen valor → falso positivo).
+        // Solo considera "sucios" los text/textarea/email/search/password con
+        // contenido escrito por el usuario (el campo activo o con valor no vacío
+        // distinto al placeholder, y que el usuario haya tocado al menos una vez).
+        var _dirtyInputs = new WeakSet();
+        document.addEventListener('input', function(e) {
+            var t = e.target;
+            var tag = (t.tagName || '').toUpperCase();
+            var type = (t.type || '').toLowerCase();
+            var textTypes = ['text','email','search','password','url','tel'];
+            if ((tag === 'INPUT' && textTypes.indexOf(type) !== -1) ||
+                tag === 'TEXTAREA' ||
+                t.getAttribute('contenteditable') === 'true') {
+                var val = t.value !== undefined ? t.value : t.textContent;
+                if (val && val.trim().length > 0) {
+                    _dirtyInputs.add(t);
+                } else {
+                    _dirtyInputs.delete(t);
+                }
+            }
+        }, true);
+
         function checkDirtyFields() {
             var inputs = document.querySelectorAll(
-                'input:not([type="hidden"]):not([type="submit"]):not([type="button"]),' +
+                'input[type="text"],input[type="email"],input[type="search"],' +
+                'input[type="password"],input[type="url"],input[type="tel"],' +
                 'textarea,[contenteditable="true"]'
             );
             for (var i = 0; i < inputs.length; i++) {
-                var el = inputs[i];
-                var val = el.value !== undefined ? el.value : el.textContent;
-                // Considerar "sucio" si tiene valor y no es un placeholder
-                if (val && val.trim().length > 0) {
-                    return true;
-                }
+                if (_dirtyInputs.has(inputs[i])) return true;
             }
             return false;
         }
@@ -691,14 +718,20 @@ if st.session_state.get("login"):
             }, CFG.SCROLL_TAIL_MS);
         }, { passive: true });
 
-        // — Foco en campos editables —
-        document.addEventListener('focusin', function(e) {
-            var tag = e.target.tagName;
-            var isEditable = (
-                tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
-                e.target.getAttribute('contenteditable') === 'true'
+        // — Foco en campos de texto editables (excluye SELECT/checkbox/radio) —
+        function isTextInput(el) {
+            var tag = (el.tagName || '').toUpperCase();
+            var type = (el.type || '').toLowerCase();
+            var textTypes = ['text','email','search','password','url','tel',''];
+            return (
+                (tag === 'INPUT' && textTypes.indexOf(type) !== -1) ||
+                tag === 'TEXTAREA' ||
+                el.getAttribute('contenteditable') === 'true'
             );
-            if (isEditable) {
+        }
+
+        document.addEventListener('focusin', function(e) {
+            if (isTextInput(e.target)) {
                 state.fieldFocused = true;
                 state.lastInteraction = Date.now();
                 clearTimeout(state.refreshScheduled);
@@ -707,12 +740,7 @@ if st.session_state.get("login"):
         }, true);
 
         document.addEventListener('focusout', function(e) {
-            var tag = e.target.tagName;
-            var isEditable = (
-                tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
-                e.target.getAttribute('contenteditable') === 'true'
-            );
-            if (isEditable) {
+            if (isTextInput(e.target)) {
                 state.lastInteraction = Date.now();
                 clearTimeout(state.focusEndTimer);
                 state.focusEndTimer = setTimeout(function() {
@@ -744,6 +772,23 @@ if st.session_state.get("login"):
         document.addEventListener('touchstart', onActivity, { passive: true });
         document.addEventListener('click',     onActivity, { passive: true });
 
+        // — Limpiar estado dirty al hacer submit de formulario —
+        document.addEventListener('submit', function() {
+            _dirtyInputs = new WeakSet();
+            state.hasDirtyFields = false;
+        }, true);
+        // También limpiar cuando Streamlit recarga el DOM (click en botones Streamlit)
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest('button[data-testid]');
+            if (btn) {
+                // Botón de Streamlit → probable rerun → limpiar dirty
+                setTimeout(function() {
+                    _dirtyInputs = new WeakSet();
+                    state.hasDirtyFields = false;
+                }, 200);
+            }
+        }, true);
+
         // ═══════════════════════════════════════════════
         // ARRANQUE
         // ═══════════════════════════════════════════════
@@ -757,7 +802,7 @@ if st.session_state.get("login"):
 if not st.session_state.login:
     st.markdown(
         f'<div style="text-align:center;padding:40px 0 20px;">'
-        f'<img src="{LOGO_URL}" width="480" style="border-radius:12px;'
+        f'<img src="{LOGO_DATA_URI if "LOGO_DATA_URI" in dir() else LOGO_URL}" width="480" style="border-radius:12px;'
         f'box-shadow:0 8px 32px rgba(0,43,91,0.18);"></div>',
         unsafe_allow_html=True,
     )
@@ -805,7 +850,8 @@ if not st.session_state.login:
 with st.sidebar:
     # ⚠️ CLAVE: st.image directo, sin st.markdown(<div>) alrededor.
     # Esto es lo que permite que el sidebar funcione correctamente en la APK.
-    st.image(LOGO_URL, width=210)
+    # Se usa LOGO_DATA_URI si el archivo local existe; de lo contrario la URL de GitHub.
+    st.image(LOGO_DATA_URI if 'LOGO_DATA_URI' in dir() else LOGO_URL, width=210)
 
     st.markdown(
         f"<p style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"

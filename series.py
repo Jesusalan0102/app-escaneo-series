@@ -32,7 +32,7 @@ CARRIER_SUCCESS = "#16a34a"
 CARRIER_WARN    = "#d97706"
 CARRIER_DANGER  = "#dc2626"
 
-LOGO_URL = "https://raw.githubusercontent.com/Jesusalano102/app-escaneo-series/main/carrierlogo2.jpeg.jpg"
+LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg"
 SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {

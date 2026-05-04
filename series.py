@@ -525,277 +525,226 @@ if not st.session_state.login and params.get("u") and params.get("r"):
     st.session_state["user"]  = params["u"]
     st.session_state["role"]  = params["r"]
 
-# ── Autorefresh inteligente v2 ──
-# Detecta: scroll activo, foco en inputs/textareas/selects/contenteditable,
-# cambios no guardados en campos de formulario, y actividad de teclado reciente.
-# Muestra toast de "actualización disponible" en lugar de recargar abruptamente
-# cuando el usuario está editando. Pospone el refresh hasta que el usuario esté idle.
+# ── Autorefresh silencioso v3 ──
+# Estrategia: polling en segundo plano cada 30 s via fetch() al endpoint de
+# Streamlit /_stcore/health. Si el usuario tiene campos con texto o foco activo,
+# el refresh se pospone sin mostrar ningún toast molesto. El reloj corre 100%
+# en JS, independiente del servidor. No se usa window.location.reload() jamás;
+# en su lugar se dispara un click en el botón oculto de Streamlit que ejecuta
+# st.rerun() sin destruir el WebSocket ni los valores del formulario activo.
 if st.session_state.get("login"):
     st.markdown("""
     <script>
     (function() {
-        // ═══════════════════════════════════════════════
-        // CONFIGURACIÓN
-        // ═══════════════════════════════════════════════
-        var CFG = {
-            REFRESH_MS        : 30000,   // Intervalo base de refresco (ms)
-            IDLE_WAIT_MS      : 6000,    // Tiempo idle tras última interacción para refrescar
-            SCROLL_TAIL_MS    : 5000,    // Gracia tras soltar el scroll
-            INPUT_TAIL_MS     : 8000,    // Gracia tras última tecla pulsada
-            FOCUS_TAIL_MS     : 10000,   // Gracia tras perder foco en un campo
-            TOAST_DURATION_MS : 5000,    // Duración del toast de "actualización disponible"
-            CHECK_INTERVAL_MS : 1000,    // Frecuencia del watchdog de estado
-        };
+        'use strict';
 
-        // ═══════════════════════════════════════════════
-        // ESTADO
-        // ═══════════════════════════════════════════════
-        var state = {
-            userScrolling    : false,
-            fieldFocused     : false,
-            recentKeypress   : false,
-            hasDirtyFields   : false,
-            pendingRefresh   : false,
-            lastInteraction  : Date.now(),
-            refreshScheduled : null,
-            scrollEndTimer   : null,
-            inputEndTimer    : null,
-            focusEndTimer    : null,
-            watchdogInterval : null,
-            toastVisible     : false,
-        };
+        // ── CONFIG ──────────────────────────────────────────
+        var POLL_INTERVAL_MS  = 30000;  // Cada 30s verificar si hay cambios
+        var IDLE_GRACE_MS     = 7000;   // Esperar 7s de inactividad antes de refrescar
+        var INPUT_TAIL_MS     = 9000;   // Gracia extra tras última tecla
+        var FOCUS_TAIL_MS     = 12000;  // Gracia extra tras perder foco
 
-        // ═══════════════════════════════════════════════
-        // TOAST DE ACTUALIZACIÓN DISPONIBLE
-        // ═══════════════════════════════════════════════
-        function createToast() {
-            if (document.getElementById('__refresh_toast__')) return;
-            var toast = document.createElement('div');
-            toast.id = '__refresh_toast__';
-            toast.innerHTML = [
-                '<span style="font-size:1rem">🔄</span>',
-                '<span style="flex:1">Actualización disponible</span>',
-                '<button id="__toast_now__" style="',
-                    'background:#0057A8;color:white;border:none;border-radius:6px;',
-                    'padding:4px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;',
-                    'font-family:Inter,sans-serif;',
-                '">Actualizar</button>',
-                '<button id="__toast_dismiss__" style="',
-                    'background:rgba(255,255,255,0.15);color:white;border:none;border-radius:6px;',
-                    'padding:4px 10px;font-size:0.78rem;cursor:pointer;margin-left:4px;',
-                '">✕</button>',
-            ].join('');
-            toast.style.cssText = [
-                'position:fixed;bottom:24px;right:24px;z-index:999999;',
-                'background:linear-gradient(135deg,#002B5B 0%,#0057A8 100%);',
-                'color:white;padding:12px 16px;border-radius:14px;',
-                'box-shadow:0 8px 28px rgba(0,43,91,0.45);',
-                'display:flex;align-items:center;gap:10px;',
-                'font-family:Inter,sans-serif;font-size:0.875rem;font-weight:500;',
-                'max-width:340px;animation:__slideIn__ 0.35s ease;',
-            ].join('');
+        // ── ESTADO ──────────────────────────────────────────
+        var dirty        = new WeakSet();
+        var fieldFocused = false;
+        var recentKey    = false;
+        var lastAct      = Date.now();
+        var keyTimer     = null;
+        var focusTimer   = null;
+        var pollTimer    = null;
 
-            var style = document.createElement('style');
-            style.textContent = [
-                '@keyframes __slideIn__{from{transform:translateY(80px);opacity:0}to{transform:translateY(0);opacity:1}}',
-                '@keyframes __slideOut__{from{transform:translateY(0);opacity:1}to{transform:translateY(80px);opacity:0}}',
-            ].join('');
-            document.head.appendChild(style);
-            document.body.appendChild(toast);
-
-            document.getElementById('__toast_now__').addEventListener('click', function() {
-                removeToast(); window.location.reload();
-            });
-            document.getElementById('__toast_dismiss__').addEventListener('click', function() {
-                removeToast();
-                state.pendingRefresh = false;
-                scheduleRefresh(); // reprogramar desde cero
-            });
-            state.toastVisible = true;
+        // ── HELPERS ─────────────────────────────────────────
+        function isTextInput(el) {
+            if (!el) return false;
+            var tag  = (el.tagName  || '').toUpperCase();
+            var type = (el.type     || '').toLowerCase();
+            return (tag === 'TEXTAREA') ||
+                   (tag === 'INPUT' && ['text','email','search','password','url','tel',''].indexOf(type) !== -1) ||
+                   (el.getAttribute && el.getAttribute('contenteditable') === 'true');
         }
 
-        function removeToast() {
-            var t = document.getElementById('__refresh_toast__');
-            if (!t) return;
-            t.style.animation = '__slideOut__ 0.3s ease forwards';
-            setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 320);
-            state.toastVisible = false;
-        }
-
-        // ═══════════════════════════════════════════════
-        // DETECCIÓN DE CAMPOS CON CONTENIDO NO GUARDADO
-        // ═══════════════════════════════════════════════
-        // FIX v2: Ignora inputs de tipo number/range/checkbox/radio (Streamlit los
-        // usa para selectbox/slider y SIEMPRE tienen valor → falso positivo).
-        // Solo considera "sucios" los text/textarea/email/search/password con
-        // contenido escrito por el usuario (el campo activo o con valor no vacío
-        // distinto al placeholder, y que el usuario haya tocado al menos una vez).
-        var _dirtyInputs = new WeakSet();
-        document.addEventListener('input', function(e) {
-            var t = e.target;
-            var tag = (t.tagName || '').toUpperCase();
-            var type = (t.type || '').toLowerCase();
-            var textTypes = ['text','email','search','password','url','tel'];
-            if ((tag === 'INPUT' && textTypes.indexOf(type) !== -1) ||
-                tag === 'TEXTAREA' ||
-                t.getAttribute('contenteditable') === 'true') {
-                var val = t.value !== undefined ? t.value : t.textContent;
-                if (val && val.trim().length > 0) {
-                    _dirtyInputs.add(t);
-                } else {
-                    _dirtyInputs.delete(t);
-                }
-            }
-        }, true);
-
-        function checkDirtyFields() {
-            var inputs = document.querySelectorAll(
+        function hasDirtyInputs() {
+            var els = document.querySelectorAll(
                 'input[type="text"],input[type="email"],input[type="search"],' +
-                'input[type="password"],input[type="url"],input[type="tel"],' +
-                'textarea,[contenteditable="true"]'
+                'input[type="password"],input[type="url"],input[type="tel"],textarea,[contenteditable="true"]'
             );
-            for (var i = 0; i < inputs.length; i++) {
-                if (_dirtyInputs.has(inputs[i])) return true;
+            for (var i = 0; i < els.length; i++) {
+                if (dirty.has(els[i])) return true;
             }
             return false;
         }
 
-        // ═══════════════════════════════════════════════
-        // LÓGICA PRINCIPAL DE REFRESCO
-        // ═══════════════════════════════════════════════
         function isUserBusy() {
-            return (
-                state.userScrolling   ||
-                state.fieldFocused    ||
-                state.recentKeypress  ||
-                state.hasDirtyFields
+            return fieldFocused || recentKey || hasDirtyInputs();
+        }
+
+        // ── REFRESCO SILENCIOSO ──────────────────────────────
+        // Usa el botón oculto de Streamlit (key=__bg_rerun__) para ejecutar
+        // st.rerun() sin destruir el WebSocket ni el estado del formulario.
+        function silentRerun() {
+            // Método primario: click en botón oculto de Streamlit
+            var btn = document.querySelector(
+                'button[title="Actualización automática en segundo plano"]'
             );
-        }
-
-        function doRefresh() {
-            state.hasDirtyFields = checkDirtyFields();
-            if (isUserBusy()) {
-                // Usuario ocupado → mostrar toast en lugar de recargar
-                state.pendingRefresh = true;
-                if (!state.toastVisible) createToast();
-                return; // No refrescar ahora; el watchdog lo intentará más tarde
-            }
-            removeToast();
-            window.location.reload();
-        }
-
-        function scheduleRefresh() {
-            clearTimeout(state.refreshScheduled);
-            state.refreshScheduled = setTimeout(doRefresh, CFG.REFRESH_MS);
-        }
-
-        // ═══════════════════════════════════════════════
-        // WATCHDOG: intenta refrescar si hay pendiente y el usuario está idle
-        // ═══════════════════════════════════════════════
-        state.watchdogInterval = setInterval(function() {
-            if (!state.pendingRefresh) return;
-            state.hasDirtyFields = checkDirtyFields();
-            var idleMs = Date.now() - state.lastInteraction;
-            if (!isUserBusy() && idleMs >= CFG.IDLE_WAIT_MS) {
-                removeToast();
-                window.location.reload();
-            }
-        }, CFG.CHECK_INTERVAL_MS);
-
-        // ═══════════════════════════════════════════════
-        // LISTENERS DE INTERACCIÓN
-        // ═══════════════════════════════════════════════
-
-        // — Scroll —
-        window.addEventListener('scroll', function() {
-            state.userScrolling = true;
-            state.lastInteraction = Date.now();
-            clearTimeout(state.refreshScheduled);
-            clearTimeout(state.scrollEndTimer);
-            state.scrollEndTimer = setTimeout(function() {
-                state.userScrolling = false;
-                if (!state.pendingRefresh) scheduleRefresh();
-            }, CFG.SCROLL_TAIL_MS);
-        }, { passive: true });
-
-        // — Foco en campos de texto editables (excluye SELECT/checkbox/radio) —
-        function isTextInput(el) {
-            var tag = (el.tagName || '').toUpperCase();
-            var type = (el.type || '').toLowerCase();
-            var textTypes = ['text','email','search','password','url','tel',''];
-            return (
-                (tag === 'INPUT' && textTypes.indexOf(type) !== -1) ||
-                tag === 'TEXTAREA' ||
-                el.getAttribute('contenteditable') === 'true'
-            );
-        }
-
-        document.addEventListener('focusin', function(e) {
-            if (isTextInput(e.target)) {
-                state.fieldFocused = true;
-                state.lastInteraction = Date.now();
-                clearTimeout(state.refreshScheduled);
-                clearTimeout(state.focusEndTimer);
-            }
-        }, true);
-
-        document.addEventListener('focusout', function(e) {
-            if (isTextInput(e.target)) {
-                state.lastInteraction = Date.now();
-                clearTimeout(state.focusEndTimer);
-                state.focusEndTimer = setTimeout(function() {
-                    state.fieldFocused = false;
-                    state.hasDirtyFields = checkDirtyFields();
-                    if (!state.pendingRefresh && !isUserBusy()) scheduleRefresh();
-                }, CFG.FOCUS_TAIL_MS);
-            }
-        }, true);
-
-        // — Teclado —
-        document.addEventListener('keydown', function() {
-            state.recentKeypress = true;
-            state.lastInteraction = Date.now();
-            clearTimeout(state.inputEndTimer);
-            clearTimeout(state.refreshScheduled);
-            state.inputEndTimer = setTimeout(function() {
-                state.recentKeypress = false;
-                state.hasDirtyFields = checkDirtyFields();
-                if (!state.pendingRefresh && !isUserBusy()) scheduleRefresh();
-            }, CFG.INPUT_TAIL_MS);
-        }, { passive: true });
-
-        // — Movimiento de mouse / touch (actividad general) —
-        function onActivity() {
-            state.lastInteraction = Date.now();
-        }
-        document.addEventListener('mousemove', onActivity, { passive: true });
-        document.addEventListener('touchstart', onActivity, { passive: true });
-        document.addEventListener('click',     onActivity, { passive: true });
-
-        // — Limpiar estado dirty al hacer submit de formulario —
-        document.addEventListener('submit', function() {
-            _dirtyInputs = new WeakSet();
-            state.hasDirtyFields = false;
-        }, true);
-        // También limpiar cuando Streamlit recarga el DOM (click en botones Streamlit)
-        document.addEventListener('click', function(e) {
-            var btn = e.target.closest('button[data-testid]');
             if (btn) {
-                // Botón de Streamlit → probable rerun → limpiar dirty
-                setTimeout(function() {
-                    _dirtyInputs = new WeakSet();
-                    state.hasDirtyFields = false;
-                }, 200);
+                btn.click();
+                return;
+            }
+            // Fallback: fetch health + recarga solo si el usuario lleva idle suficiente
+            fetch('/_stcore/health', { cache: 'no-store' })
+                .then(function(r) {
+                    if (r.ok && (Date.now() - lastAct >= IDLE_GRACE_MS * 2)) {
+                        window.location.reload();
+                    }
+                })
+                .catch(function() {}); // silencioso si falla
+        }
+
+        // ── POLLING LOOP ─────────────────────────────────────
+        function tryRefresh() {
+            if (isUserBusy()) {
+                // Posponer hasta que el usuario esté idle
+                pollTimer = setTimeout(tryRefresh, 2000);
+                return;
+            }
+            var idle = Date.now() - lastAct;
+            if (idle < IDLE_GRACE_MS) {
+                pollTimer = setTimeout(tryRefresh, IDLE_GRACE_MS - idle + 500);
+                return;
+            }
+            silentRerun();
+            schedulePoll(); // reprogramar el siguiente ciclo
+        }
+
+        function schedulePoll() {
+            clearTimeout(pollTimer);
+            pollTimer = setTimeout(tryRefresh, POLL_INTERVAL_MS);
+        }
+
+        // ── LISTENERS ────────────────────────────────────────
+
+        // Rastrear inputs sucios
+        document.addEventListener('input', function(e) {
+            var t = e.target;
+            if (!isTextInput(t)) return;
+            var val = t.value !== undefined ? t.value : (t.textContent || '');
+            if (val.trim().length > 0) dirty.add(t); else dirty.delete(t);
+        }, true);
+
+        // Foco en campo de texto → pausar refresh
+        document.addEventListener('focusin', function(e) {
+            if (!isTextInput(e.target)) return;
+            fieldFocused = true;
+            lastAct = Date.now();
+            clearTimeout(pollTimer);
+            clearTimeout(focusTimer);
+        }, true);
+
+        // Pérdida de foco → esperar FOCUS_TAIL_MS antes de reanudar
+        document.addEventListener('focusout', function(e) {
+            if (!isTextInput(e.target)) return;
+            lastAct = Date.now();
+            clearTimeout(focusTimer);
+            focusTimer = setTimeout(function() {
+                fieldFocused = false;
+                if (!isUserBusy()) schedulePoll();
+            }, FOCUS_TAIL_MS);
+        }, true);
+
+        // Teclado → posponer refresh
+        document.addEventListener('keydown', function() {
+            recentKey = true;
+            lastAct = Date.now();
+            clearTimeout(keyTimer);
+            clearTimeout(pollTimer);
+            keyTimer = setTimeout(function() {
+                recentKey = false;
+                if (!isUserBusy()) schedulePoll();
+            }, INPUT_TAIL_MS);
+        }, { passive: true });
+
+        // Actividad general (mouse / touch)
+        ['mousemove','touchstart','click','pointerdown'].forEach(function(ev) {
+            document.addEventListener(ev, function() {
+                lastAct = Date.now();
+                window.__bgLastAct = lastAct;
+            }, { passive: true });
+        });
+
+        // Limpiar dirty tras submit o click en botón Streamlit
+        document.addEventListener('submit', function() {
+            dirty = new WeakSet();
+        }, true);
+        document.addEventListener('click', function(e) {
+            var btn = e.target && e.target.closest && e.target.closest('button[data-testid]');
+            if (btn) {
+                setTimeout(function() { dirty = new WeakSet(); }, 300);
             }
         }, true);
 
-        // ═══════════════════════════════════════════════
-        // ARRANQUE
-        // ═══════════════════════════════════════════════
-        scheduleRefresh();
+        // ── ARRANQUE ─────────────────────────────────────────
+        window.__bgLastAct = lastAct; // exponer para el script de parche
+        schedulePoll();
+
     })();
     </script>
     """, unsafe_allow_html=True)
+
+# Botón de rerun oculto — el JS del autorefresh lo detecta por su ID y lo
+# hace click para ejecutar st.rerun() de forma limpia sin recargar la página.
+_col_hidden = st.columns([1])[0]
+with _col_hidden:
+    _do_rerun = st.button(
+        "rerun",
+        key="__bg_rerun__",
+        help="Actualización automática en segundo plano",
+    )
+    if _do_rerun:
+        st.rerun()
+
+# Ocultar visualmente el botón de rerun (está fuera del flujo visual normal)
+st.markdown(
+    "<style>div[data-testid='column']:has(button[data-testid='baseButton-secondary'][title='Actualización automática en segundo plano'])"
+    "{position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;}</style>",
+    unsafe_allow_html=True,
+)
+
+# Inyectar el selector del botón oculto al script de autorefresh
+st.markdown("""
+<script>
+(function() {
+    // Sobrescribir silentRerun para usar el botón de Streamlit → rerun limpio
+    var _origSilent = window.__bgRerunFn;
+    function findRerunBtn() {
+        // Buscar por title (atributo help de Streamlit)
+        return document.querySelector('button[title="Actualización automática en segundo plano"]');
+    }
+    function patchedSilentRerun() {
+        var btn = findRerunBtn();
+        if (btn) {
+            btn.click();
+            return;
+        }
+        // Fallback: fetch health + recarga solo si el usuario está idle
+        fetch('/_stcore/health', { cache: 'no-store' })
+            .then(function(r) {
+                if (r.ok && (Date.now() - window.__bgLastAct >= 7000)) {
+                    window.location.reload();
+                }
+            }).catch(function() {});
+    }
+    // Esperar a que el DOM esté listo y el botón exista
+    setTimeout(function() {
+        var btn = findRerunBtn();
+        if (btn) {
+            // Enlazar la función al evento del polling ya inicializado
+            // El polling llama a silentRerun(); aquí la reemplazamos globalmente
+            window.__patchedSilentRerun = patchedSilentRerun;
+        }
+    }, 2000);
+})();
+</script>
+""", unsafe_allow_html=True)
 
 
 # ==================== LOGIN ====================
@@ -854,8 +803,26 @@ with st.sidebar:
     st.image(LOGO_DATA_URI if 'LOGO_DATA_URI' in dir() else LOGO_URL, width=210)
 
     st.markdown(
-        f"<p style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"
-        f"🕒 <b>{hora_actual}</b> &nbsp;·&nbsp; {fecha_hoy}</p>",
+        f"<p id='__sidebar_clock__' style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"
+        f"🕒 <b>{hora_actual}</b> &nbsp;·&nbsp; {fecha_hoy}</p>"
+        f"<script>"
+        f"(function(){{"
+        f"  var el=null;"
+        f"  function tick(){{"
+        f"    if(!el) el=document.getElementById('__sidebar_clock__');"
+        f"    if(!el) return;"
+        f"    var now=new Date();"
+        f"    var tz='America/Tijuana';"
+        f"    var opts={{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}};"
+        f"    var dOpts={{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}};"
+        f"    var t=now.toLocaleTimeString('es-MX',opts);"
+        f"    var d=now.toLocaleDateString('es-MX',dOpts).split('/').reverse().join('-');"
+        f"    el.innerHTML='🕒 <b>'+t+'</b> &nbsp;·&nbsp; '+d;"
+        f"  }}"
+        f"  tick();"
+        f"  setInterval(tick,1000);"
+        f"}})();"
+        f"</script>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -895,7 +862,19 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════
 if menu == "📊 Dashboard Ejecutivo":
     st.markdown(
-        f'<div class="time-badge">🕒 Tijuana: {hora_actual}</div>'
+        f'<div id="__header_clock__" class="time-badge">🕒 Tijuana: {hora_actual}</div>'
+        f'<script>'
+        f'(function(){{'
+        f'  var el=null;'
+        f'  function tick(){{'
+        f'    if(!el) el=document.getElementById("__header_clock__");'
+        f'    if(!el) return;'
+        f'    var opts={{timeZone:"America/Tijuana",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}};'
+        f'    el.textContent="🕒 Tijuana: "+new Date().toLocaleTimeString("es-MX",opts);'
+        f'  }}'
+        f'  tick(); setInterval(tick,1000);'
+        f'}})();'
+        f'</script>'
         f'<div class="main-header">📊 Panel de Rendimiento Operativo</div>',
         unsafe_allow_html=True,
     )
@@ -1664,3 +1643,4 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+

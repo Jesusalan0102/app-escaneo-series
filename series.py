@@ -297,11 +297,77 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
     background: rgba(255,255,255,0.1) !important;
 }}
 
-/* ══ RESPONSIVE ══ */
+/* ══ RESPONSIVE / ANDROID WEBVIEW NATIVO ══ */
+
+/* Viewport meta via CSS (refuerzo) */
+html {{
+    -webkit-text-size-adjust: 100%;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+}}
+
+/* Todos los elementos interactivos: area de toque minima 48px (Material Design) */
+button, .stButton > button,
+[role="radio"], [role="button"],
+.stSelectbox, .stTextInput input,
+.stMultiselect, .stFileUploader label {{
+    min-height: 48px !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: transparent !important;
+    cursor: pointer !important;
+}}
+
+/* Inputs mas grandes y legibles en movil */
+.stTextInput input, .stSelectbox select,
+.stTextArea textarea {{
+    font-size: 16px !important;  /* evita zoom automatico en iOS/Android */
+    border-radius: 10px !important;
+}}
+
+/* Scrolling nativo suave en WebView */
+.main .block-container {{
+    -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
+}}
+section[data-testid="stSidebar"] {{
+    -webkit-overflow-scrolling: touch;
+}}
+
+/* Botones primarios mas grandes y con feedback tactil */
+.stButton > button[kind="primary"] {{
+    min-height: 52px !important;
+    font-size: 1rem !important;
+    letter-spacing: 0.3px !important;
+    active-transform: scale(0.97) !important;
+}}
+.stButton > button:active {{
+    transform: scale(0.97) !important;
+    transition: transform 0.08s ease !important;
+}}
+
+/* Radio buttons del menu mas faciles de tocar */
+section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+    min-height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+}}
+
 @media (max-width: 768px) {{
-    .main-header {{ font-size: 1.3rem; }}
-    .kpi-num {{ font-size: 1.8rem; }}
-    .login-card {{ padding: 24px 20px; }}
+    .main-header {{ font-size: 1.2rem; }}
+    .kpi-num {{ font-size: 1.6rem; }}
+    .login-card {{ padding: 20px 16px; }}
+    .block-container {{ padding: 1rem 0.75rem !important; }}
+    /* Sidebar cubre pantalla completa en movil */
+    section[data-testid="stSidebar"] {{
+        width: 85vw !important;
+        min-width: 85vw !important;
+        max-width: 320px !important;
+    }}
+    /* KPI cards en 2 columnas en movil */
+    [data-testid="column"] {{
+        min-width: 45% !important;
+    }}
 }}
 
 /* ══ BOTÓN FLOTANTE HAMBURGUESA ══ */
@@ -341,6 +407,62 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
 </style>
 """, unsafe_allow_html=True)
 
+
+# ==================== META VIEWPORT + TOUCH FIXES PARA WEBVIEW ====================
+# Streamlit no inyecta viewport correcto. Lo hacemos via JS para que WebView Android
+# renderice a escala correcta y no haga zoom al tocar inputs.
+st.markdown("""
+<script>
+(function() {
+    // 1. Viewport meta — evita que WebView haga zoom al tocar campos
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'viewport';
+        document.head.appendChild(meta);
+    }
+    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+
+    // 2. Fix de touch: los eventos de Streamlit a veces requieren touchend→click
+    //    en WebView. Este polyfill los normaliza.
+    function addTouchClick(el) {
+        if (el._ctTouchFixed) return;
+        el._ctTouchFixed = true;
+        el.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            el.click();
+        }, { passive: false });
+    }
+
+    // 3. Observador: aplica fix a todo botón que aparezca en el DOM
+    var obs = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+                if (!node.querySelectorAll) return;
+                node.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
+            });
+        });
+        // También aplica a botones ya presentes
+        document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
+    });
+    obs.observe(document.body || document.documentElement, {
+        childList: true, subtree: true
+    });
+    // Aplicar a lo que ya existe
+    setTimeout(function() {
+        document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
+    }, 800);
+
+    // 4. Prevenir doble-tap zoom en toda la app
+    var lastTap = 0;
+    document.addEventListener('touchend', function(e) {
+        var now = Date.now();
+        if (now - lastTap < 300) e.preventDefault();
+        lastTap = now;
+    }, { passive: false });
+})();
+</script>
+""", unsafe_allow_html=True)
 
 # ==================== BOTÓN FLOTANTE SIDEBAR ====================
 # Inyecta el botón hamburguesa en el DOM y el JS que controla el sidebar de Streamlit.
@@ -741,50 +863,76 @@ if st.session_state.get("login"):
 
 
 # ==================== LOGIN ====================
+# Sin st.form() — WebView Android no dispara submit de forms Streamlit.
+# Usamos inputs directos + st.button con key, que sí responde al tap nativo.
 if not st.session_state.login:
+    # Inicializar estado de inputs si no existe
+    if "_login_u" not in st.session_state:
+        st.session_state["_login_u"] = ""
+    if "_login_p" not in st.session_state:
+        st.session_state["_login_p"] = ""
+    if "_login_err" not in st.session_state:
+        st.session_state["_login_err"] = ""
+
     st.markdown(
-        f'<div style="text-align:center;padding:40px 0 20px;">'
-        f'<img src="{LOGO_DATA_URI if "LOGO_DATA_URI" in dir() else LOGO_URL}" width="480" style="border-radius:12px;'
-        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);"></div>',
+        f'<div style="text-align:center;padding:30px 0 16px;">'
+        f'<img src="{LOGO_DATA_URI if "LOGO_DATA_URI" in dir() else LOGO_URL}" width="340" style="border-radius:12px;'
+        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);max-width:90vw;"></div>',
         unsafe_allow_html=True,
     )
-    _, col_c, _ = st.columns([1, 1.2, 1])
+    _, col_c, _ = st.columns([1, 2, 1])
     with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.markdown(
-            f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:6px;"
-            f"font-family:Inter,sans-serif;font-weight:800;'>Carrier Transicold</h3>"
-            f"<p style='text-align:center;color:#6b7280;margin-bottom:24px;font-size:0.9rem;'>"
+            f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:4px;"
+            f"font-family:Inter,sans-serif;font-weight:800;font-size:1.3rem;'>Carrier Transicold</h3>"
+            f"<p style='text-align:center;color:#6b7280;margin-bottom:20px;font-size:0.85rem;'>"
             f"Sistema Operativo — Panel de Acceso</p>",
             unsafe_allow_html=True,
         )
-        with st.form("login_form"):
-            u_log = st.text_input("👤 Usuario")
-            p_log = st.text_input("🔑 Contraseña", type="password")
-            if st.form_submit_button("🚀 Ingresar al Sistema", use_container_width=True, type="primary"):
-                # Login usa lectura directa SIN cache para evitar falsos negativos
-                # cuando la BD estuvo momentaneamente saturada.
-                with st.spinner("Verificando credenciales..."):
-                    user = _direct_read(
-                        "SELECT * FROM users WHERE username=%s AND password=%s",
-                        (u_log.strip(), p_log.strip()),
-                    )
-                if user is None:
-                    st.error("⚠️ No se pudo conectar a la base de datos. Intenta en unos segundos.")
-                elif len(user) == 0:
-                    st.error("❌ Credenciales incorrectas. Intenta de nuevo.")
-                else:
-                    st.session_state.update({
-                        "login": True,
-                        "user":  user[0]["username"],
-                        "role":  user[0]["role"].lower(),
-                    })
-                    st.query_params["u"] = user[0]["username"]
-                    st.query_params["r"] = user[0]["role"].lower()
-                    st.rerun()
+
+        u_log = st.text_input(
+            "Usuario", key="_login_u",
+            placeholder="Ingresa tu usuario",
+        )
+        p_log = st.text_input(
+            "Contrasena", key="_login_p",
+            type="password", placeholder="Ingresa tu contrasena",
+        )
+
+        # Mostrar error previo si existe
+        if st.session_state["_login_err"]:
+            st.error(st.session_state["_login_err"])
+
+        # Boton directo sin form — compatible con WebView Android
+        if st.button("Ingresar al Sistema", use_container_width=True,
+                     type="primary", key="_login_btn"):
+            st.session_state["_login_err"] = ""
+            with st.spinner("Verificando..."):
+                user = _direct_read(
+                    "SELECT * FROM users WHERE username=%s AND password=%s",
+                    (u_log.strip(), p_log.strip()),
+                )
+            if user is None:
+                st.session_state["_login_err"] = "No se pudo conectar. Intenta en unos segundos."
+                st.rerun()
+            elif len(user) == 0:
+                st.session_state["_login_err"] = "Credenciales incorrectas. Intenta de nuevo."
+                st.rerun()
+            else:
+                st.session_state.update({
+                    "login": True,
+                    "user":  user[0]["username"],
+                    "role":  user[0]["role"].lower(),
+                    "_login_err": "",
+                })
+                st.query_params["u"] = user[0]["username"]
+                st.query_params["r"] = user[0]["role"].lower()
+                st.rerun()
+
         st.markdown(
-            f"<p style='text-align:center;margin-top:18px;font-size:0.78rem;color:#9ca3af;'>"
-            f"© {fecha_hoy[:4]} Carrier Transicold · Todos los derechos reservados</p>",
+            f"<p style='text-align:center;margin-top:14px;font-size:0.75rem;color:#9ca3af;'>"
+            f"© {fecha_hoy[:4]} Carrier Transicold</p>",
             unsafe_allow_html=True,
         )
         st.markdown('</div>', unsafe_allow_html=True)

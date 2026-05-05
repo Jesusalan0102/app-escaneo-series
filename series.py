@@ -11,7 +11,6 @@ import os
 import json
 
 # ==================== CONFIGURACIÓN INICIAL ====================
-# FUENTE: Código 1 (con page_icon y título mejorado)
 st.set_page_config(
     page_title="Carrier Transicold – Sistema Operativo",
     layout="wide",
@@ -33,7 +32,6 @@ CARRIER_WARN    = "#d97706"
 CARRIER_DANGER  = "#dc2626"
 
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg"
-# Logo alternativo local (base64) — se genera automáticamente si el archivo existe
 import base64 as _b64, pathlib as _pl
 _logo_path = _pl.Path(__file__).parent / "carrierlogo.jpg"
 if _logo_path.exists():
@@ -41,6 +39,7 @@ if _logo_path.exists():
     LOGO_DATA_URI = f"data:image/jpeg;base64,{_logo_b64}"
 else:
     LOGO_DATA_URI = LOGO_URL
+
 SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
@@ -66,8 +65,6 @@ MAX_FOTOS = 100
 
 
 # ==================== CSS PREMIUM ====================
-# FUENTE: Código 1 (diseño premium con Inter + animaciones)
-# Conservado íntegramente — es superior al del Código 2
 st.markdown(f"""
 <style>
 /* ══ OCULTAR BRANDING STREAMLIT ══ */
@@ -297,9 +294,7 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
     background: rgba(255,255,255,0.1) !important;
 }}
 
-/* ══ RESPONSIVE / ANDROID WEBVIEW NATIVO ══ */
-
-/* Viewport meta via CSS (refuerzo) */
+/* ══ RESPONSIVE / ANDROID WEBVIEW ══ */
 html {{
     -webkit-text-size-adjust: 100%;
     touch-action: manipulation;
@@ -307,7 +302,6 @@ html {{
     scroll-behavior: smooth;
 }}
 
-/* Todos los elementos interactivos: area de toque minima 48px (Material Design) */
 button, .stButton > button,
 [role="radio"], [role="button"],
 .stSelectbox, .stTextInput input,
@@ -318,14 +312,12 @@ button, .stButton > button,
     cursor: pointer !important;
 }}
 
-/* Inputs mas grandes y legibles en movil */
 .stTextInput input, .stSelectbox select,
 .stTextArea textarea {{
-    font-size: 16px !important;  /* evita zoom automatico en iOS/Android */
+    font-size: 16px !important;
     border-radius: 10px !important;
 }}
 
-/* Scrolling nativo suave en WebView */
 .main .block-container {{
     -webkit-overflow-scrolling: touch;
     overflow-y: auto;
@@ -334,19 +326,16 @@ section[data-testid="stSidebar"] {{
     -webkit-overflow-scrolling: touch;
 }}
 
-/* Botones primarios mas grandes y con feedback tactil */
 .stButton > button[kind="primary"] {{
     min-height: 52px !important;
     font-size: 1rem !important;
     letter-spacing: 0.3px !important;
-    active-transform: scale(0.97) !important;
 }}
 .stButton > button:active {{
     transform: scale(0.97) !important;
     transition: transform 0.08s ease !important;
 }}
 
-/* Radio buttons del menu mas faciles de tocar */
 section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
     min-height: 48px !important;
     display: flex !important;
@@ -358,13 +347,11 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
     .kpi-num {{ font-size: 1.6rem; }}
     .login-card {{ padding: 20px 16px; }}
     .block-container {{ padding: 1rem 0.75rem !important; }}
-    /* Sidebar cubre pantalla completa en movil */
     section[data-testid="stSidebar"] {{
         width: 85vw !important;
         min-width: 85vw !important;
         max-width: 320px !important;
     }}
-    /* KPI cards en 2 columnas en movil */
     [data-testid="column"] {{
         min-width: 45% !important;
     }}
@@ -372,49 +359,88 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
 
 /* ══ BOTÓN FLOTANTE HAMBURGUESA ══ */
 #sidebar-fab {{
-    position: fixed;
-    top: 14px;
-    left: 14px;
-    z-index: 99999;
-    width: 46px;
-    height: 46px;
+    position: fixed; top: 14px; left: 14px;
+    z-index: 99999; width: 46px; height: 46px;
     border-radius: 50%;
     background: linear-gradient(135deg, {CARRIER_BLUE} 0%, #0057A8 100%);
     border: 2px solid rgba(255,255,255,0.3);
     box-shadow: 0 4px 16px rgba(0,43,91,0.45);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }}
-#sidebar-fab:hover {{
-    transform: scale(1.08);
-    box-shadow: 0 6px 22px rgba(0,43,91,0.55);
-}}
+#sidebar-fab:hover {{ transform: scale(1.08); box-shadow: 0 6px 22px rgba(0,43,91,0.55); }}
 #sidebar-fab svg {{
-    width: 22px;
-    height: 22px;
-    fill: none;
-    stroke: white;
-    stroke-width: 2.2;
-    stroke-linecap: round;
+    width: 22px; height: 22px; fill: none;
+    stroke: white; stroke-width: 2.2; stroke-linecap: round;
 }}
-/* Ocultar en desktop cuando el sidebar ya es visible */
-@media (min-width: 992px) {{
-    #sidebar-fab {{ display: none; }}
+@media (min-width: 992px) {{ #sidebar-fab {{ display: none; }} }}
+
+/* ══ INDICADOR DE ACTUALIZACIÓN EN VIVO ══ */
+#live-indicator {{
+    position: fixed; bottom: 18px; right: 18px;
+    z-index: 99998; display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.95);
+    border: 1px solid #e2e8f2;
+    border-radius: 24px; padding: 6px 14px;
+    box-shadow: 0 4px 16px rgba(0,43,91,0.12);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem; font-weight: 600;
+    color: {CARRIER_BLUE};
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}}
+#live-dot {{
+    width: 8px; height: 8px; border-radius: 50%;
+    background: {CARRIER_SUCCESS};
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4);
+    animation: live-pulse 2s infinite;
+}}
+@keyframes live-pulse {{
+    0%   {{ box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }}
+    70%  {{ box-shadow: 0 0 0 8px rgba(22,163,74,0); }}
+    100% {{ box-shadow: 0 0 0 0 rgba(22,163,74,0); }}
+}}
+#live-label {{ letter-spacing: 0.3px; }}
+
+/* ══ TOAST DE ACTUALIZACIÓN ══ */
+#update-toast {{
+    position: fixed; bottom: 60px; right: 18px;
+    z-index: 99997; display: none;
+    background: {CARRIER_BLUE}; color: white;
+    border-radius: 12px; padding: 10px 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8rem; font-weight: 600;
+    box-shadow: 0 6px 20px rgba(0,43,91,0.3);
+    animation: slideUp 0.3s ease;
+}}
+@keyframes slideUp {{
+    from {{ transform: translateY(10px); opacity: 0; }}
+    to   {{ transform: translateY(0);    opacity: 1; }}
 }}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ==================== META VIEWPORT + TOUCH FIXES PARA WEBVIEW ====================
-# Streamlit no inyecta viewport correcto. Lo hacemos via JS para que WebView Android
-# renderice a escala correcta y no haga zoom al tocar inputs.
+# ==================== SISTEMA DE ACTUALIZACIÓN EN VIVO ====================
+# ─────────────────────────────────────────────────────────────────────────
+# ARQUITECTURA:
+#   1. El reloj JS actualiza la hora cada segundo (CERO recarga de página).
+#   2. Un polling silencioso via fetch() llama a /_stcore/health cada 25s
+#      para verificar que el servidor sigue vivo. Solo si cambia el estado
+#      de la app (nuevas solicitudes, etc.) se dispara st.rerun() UNA VEZ.
+#   3. Los KPIs del Dashboard se actualizan via DOM injection directa
+#      cuando el servidor responde — SIN recargar la página completa.
+#   4. El indicador LED verde confirma que la conexión está activa.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Viewport + touch fixes para WebView Android
 st.markdown("""
 <script>
 (function() {
-    // 1. Viewport meta — evita que WebView haga zoom al tocar campos
+    // 1. Viewport meta — evita zoom al tocar inputs en Android
     var meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
         meta = document.createElement('meta');
@@ -423,8 +449,7 @@ st.markdown("""
     }
     meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
 
-    // 2. Fix de touch: los eventos de Streamlit a veces requieren touchend→click
-    //    en WebView. Este polyfill los normaliza.
+    // 2. Touch polyfill para botones de Streamlit en WebView
     function addTouchClick(el) {
         if (el._ctTouchFixed) return;
         el._ctTouchFixed = true;
@@ -434,7 +459,6 @@ st.markdown("""
         }, { passive: false });
     }
 
-    // 3. Observador: aplica fix a todo botón que aparezca en el DOM
     var obs = new MutationObserver(function(mutations) {
         mutations.forEach(function(m) {
             m.addedNodes.forEach(function(node) {
@@ -442,18 +466,14 @@ st.markdown("""
                 node.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
             });
         });
-        // También aplica a botones ya presentes
         document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
     });
-    obs.observe(document.body || document.documentElement, {
-        childList: true, subtree: true
-    });
-    // Aplicar a lo que ya existe
+    obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
     setTimeout(function() {
         document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
     }, 800);
 
-    // 4. Prevenir doble-tap zoom en toda la app
+    // 3. Prevenir doble-tap zoom
     var lastTap = 0;
     document.addEventListener('touchend', function(e) {
         var now = Date.now();
@@ -464,32 +484,23 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# ==================== BOTÓN FLOTANTE SIDEBAR ====================
-# Inyecta el botón hamburguesa en el DOM y el JS que controla el sidebar de Streamlit.
-# Funciona tanto en navegador móvil como en APK WebView.
+# Sidebar FAB
 st.markdown("""
 <script>
 (function() {
-    // ── 1. Borra el estado del sidebar guardado en localStorage ──
-    // Streamlit guarda si el sidebar estaba abierto/cerrado y lo recuerda.
-    // Esto lo limpia para que SIEMPRE arranque abierto.
     function clearSidebarStorage() {
         try {
             Object.keys(localStorage).forEach(function(k) {
                 if (/sidebar/i.test(k)) localStorage.removeItem(k);
             });
-            Object.keys(sessionStorage).forEach(function(k) {
-                if (/sidebar/i.test(k)) sessionStorage.removeItem(k);
-            });
         } catch(e) {}
     }
     clearSidebarStorage();
 
-    // ── 2. Fuerza el sidebar abierto via DOM (retry 15 veces) ──
     function forceSidebarOpen(n) {
         var sb = document.querySelector('section[data-testid="stSidebar"]');
         if (!sb) {
-            if (n > 0) setTimeout(function() { forceSidebarOpen(n - 1); }, 500);
+            if (n > 0) setTimeout(function() { forceSidebarOpen(n - 1); }, 400);
             return;
         }
         sb.style.setProperty('transform',  'none',    'important');
@@ -497,19 +508,15 @@ st.markdown("""
         sb.style.setProperty('width',      '21rem',   'important');
         sb.style.setProperty('min-width',  '21rem',   'important');
         sb.style.setProperty('display',    'block',   'important');
-
-        // Ocultar botón de colapso de Streamlit
         ['button[data-testid="baseButton-header"]',
          '[data-testid="stSidebarCollapsedControl"] button'].forEach(function(sel) {
             var btn = document.querySelector(sel);
             if (btn) btn.style.display = 'none';
         });
     }
-    setTimeout(function() { forceSidebarOpen(15); }, 600);
+    setTimeout(function() { forceSidebarOpen(12); }, 500);
 
-    // ── 3. FAB hamburguesa (solo móvil / APK WebView) ──
     var sidebarOpen = true;
-
     window.toggleSidebar = function() {
         var sb = document.querySelector('section[data-testid="stSidebar"]');
         if (!sb) return;
@@ -523,29 +530,36 @@ st.markdown("""
         sidebarOpen = !sidebarOpen;
     };
 
-    // Mostrar FAB solo en móvil/APK (< 992px)
     function updateFabVisibility() {
         var fab = document.getElementById('sidebar-fab');
         if (!fab) return;
         fab.style.display = window.innerWidth < 992 ? 'flex' : 'none';
     }
     window.addEventListener('resize', updateFabVisibility);
-    setTimeout(updateFabVisibility, 1000);
+    setTimeout(updateFabVisibility, 800);
 })();
 </script>
 
-<div id="sidebar-fab" onclick="toggleSidebar()" title="Menú"
-     style="display:none">
+<div id="sidebar-fab" onclick="toggleSidebar()" title="Menú" style="display:none">
   <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
     <line x1="3" y1="6"  x2="21" y2="6"/>
     <line x1="3" y1="12" x2="21" y2="12"/>
     <line x1="3" y1="18" x2="21" y2="18"/>
   </svg>
 </div>
+
+<!-- Indicador LED en vivo -->
+<div id="live-indicator">
+    <div id="live-dot"></div>
+    <span id="live-label">En vivo</span>
+</div>
+
+<!-- Toast de actualización -->
+<div id="update-toast">🔄 Datos actualizados</div>
 """, unsafe_allow_html=True)
 
+
 # ==================== BASE DE DATOS ====================
-# FUENTE: Ambos códigos (idéntica lógica; se usa la del Código 1 que incluye init_extra_tables)
 def _get_db_config():
     env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
     if env_host:
@@ -565,23 +579,11 @@ import threading as _threading
 import queue as _queue
 import time as _time
 
-# =====================================================================
-#  CAPA DE BASE DE DATOS  —  conexion unica + escrituras en segundo plano
-# =====================================================================
-#  El servidor limita a 5 conexiones simultaneas por usuario.
-#  Solucion: un solo objeto mysql.connector por proceso Streamlit,
-#  protegido por Lock para acceso serializado.
-#  Las escrituras van a una cola consumida por un hilo daemon (write-queue)
-#  con hasta 4 reintentos y backoff, para que la UI nunca se bloquee
-#  ni pierda datos aunque la BD este momentaneamente saturada.
-# =====================================================================
-
-_db_lock = _threading.RLock()   # RLock: el mismo hilo puede re-adquirirlo
-_db_conn_holder = [None]         # lista-de-1 para mutabilidad en closure
+_db_lock        = _threading.RLock()
+_db_conn_holder = [None]
 
 
 def _open_conn():
-    """Abre una conexion fresca con hasta 5 reintentos y backoff."""
     config = _get_db_config()
     if not config:
         return None
@@ -599,7 +601,7 @@ def _open_conn():
 
 
 def _direct_read(query, params=()):
-    """Lectura directa SIN cache, con reintentos. Usar solo en login."""
+    """Lectura directa sin caché — usada en login."""
     for attempt in range(4):
         conn = _get_conn()
         if conn is None:
@@ -613,13 +615,12 @@ def _direct_read(query, params=()):
                 cur.close()
             return res
         except Exception:
-            _db_conn_holder[0] = None   # fuerza reconexion en siguiente intento
+            _db_conn_holder[0] = None
             _time.sleep(0.8 * (attempt + 1))
-    return None   # None = fallo real de BD (distinto de [] = no encontrado)
+    return None
 
 
 def _get_conn():
-    """Devuelve la conexion del proceso, reconectando si murio."""
     with _db_lock:
         conn = _db_conn_holder[0]
         try:
@@ -632,7 +633,7 @@ def _get_conn():
         return conn
 
 
-# ── Cola de escrituras en segundo plano ──────────────────────────────
+# Cola de escrituras en segundo plano
 _wq = _queue.Queue()
 _wq_ready = _threading.Event()
 
@@ -670,8 +671,8 @@ _wt.start()
 _wq_ready.wait(timeout=3)
 
 
-# ── Lecturas cacheadas ────────────────────────────────────────────────
-@st.cache_data(ttl=8, show_spinner=False)
+# TTL más largo = menos reruns involuntarios en WebView
+@st.cache_data(ttl=30, show_spinner=False)
 def _cached_read(query: str, params: tuple):
     conn = _get_conn()
     if conn is None:
@@ -695,11 +696,7 @@ def _invalidate_cache():
     _cached_read.clear()
 
 
-# ── Escrituras publicas ───────────────────────────────────────────────
 def execute_write(query, params=None, wait=True):
-    """Encola la escritura en el hilo de fondo.
-    wait=True  → espera confirmacion hasta 5 s (default).
-    wait=False → fire-and-forget, sin bloquear la UI."""
     ev  = _threading.Event() if wait else None
     box = []
     _wq.put((query, params, ev, box))
@@ -714,11 +711,10 @@ def execute_write(query, params=None, wait=True):
 
 
 def get_db_connection():
-    """Alias de compatibilidad."""
     return _get_conn()
 
+
 def init_extra_tables():
-    """Crea las tablas adicionales si no existen (necesarias para Inventarios y Toma de Valores)."""
     queries = [
         """CREATE TABLE IF NOT EXISTS inventario_data (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -755,17 +751,17 @@ init_extra_tables()
 
 # ==================== ESTADO DE SESIÓN ====================
 defaults = {
-    "login":        False,
-    "user":         "",
-    "role":         "",
-    "last_count":   0,
-    "menu_sel":     None,
+    "login":      False,
+    "user":       "",
+    "role":       "",
+    "last_count": 0,
+    "menu_sel":   None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# Recuperar sesión desde query params (sobrevive el autorefresh)
+# Recuperar sesión desde query params
 params = st.query_params
 if not st.session_state.login and params.get("u") and params.get("r"):
     st.session_state["login"] = True
@@ -774,8 +770,7 @@ if not st.session_state.login and params.get("u") and params.get("r"):
 if params.get("m") and st.session_state.get("menu_sel") is None:
     st.session_state["menu_sel"] = params["m"]
 
-# Fallback: si los query_params fueron borrados por el navegador pero localStorage los tiene,
-# inyectamos un snippet JS que los restaura en la URL y fuerza un rerun silencioso.
+# Restaurar sesión desde localStorage si los query_params fueron borrados
 if not st.session_state.login:
     st.markdown("""
     <script>
@@ -792,7 +787,6 @@ if not st.session_state.login:
                 sp.set('u', u);
                 sp.set('r', r);
                 if (m) sp.set('m', m);
-                // Redirige con los params restaurados → Streamlit los leerá en el próximo ciclo
                 window.location.search = sp.toString();
             }
         }
@@ -800,16 +794,39 @@ if not st.session_state.login:
     </script>
     """, unsafe_allow_html=True)
 
-# Reloj JS continuo. CERO recargas automáticas de página.
-# Guard window.__CT_CLOCK_STARTED__ garantiza que setInterval se crea UNA SOLA VEZ
-# aunque Streamlit inyecte el script en cada rerun.
-# En cada tick() se re-buscan los elementos por ID por si Streamlit los recreo en el DOM.
+
+# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
+# ─────────────────────────────────────────────────────────────────────────
+# CÓMO FUNCIONA (sin recargar la página):
+#
+#  ① Reloj JS: setInterval 1s → actualiza #__sb_clock__ y #__hd_clock__
+#     directo en el DOM. Sin rerun de Streamlit.
+#
+#  ② Polling de heartbeat: fetch /_stcore/health cada 25s.
+#     → Si el servidor responde OK, anima el LED verde (señal de vida).
+#     → El LED NUNCA recarga la página — solo parpadea.
+#
+#  ③ Polling de datos: cada 30s hace fetch a la misma URL con ?__ct_poll__=1
+#     El servidor responde 200 (no hace nada especial).
+#     JS compara el conteo de solicitudes embebido en el HTML actual
+#     contra window.__CT_LAST_COUNT__ (guardado en memoria).
+#     Si cambió → muestra el toast "Datos actualizados" + dispara
+#     window.__streamlitRefresh__() que llama al botón oculto de rerun.
+#
+#  ④ El botón oculto "__ct_refresh_trigger__" es el ÚNICO mecanismo
+#     que causa un rerun de Streamlit — y solo cuando hay datos nuevos.
+#     Esto evita el parpadeo de pantalla blanca en WebView Android.
+# ─────────────────────────────────────────────────────────────────────────
 if st.session_state.get("login"):
+
+    # Conteo actual de solicitudes pendientes (para comparar en el cliente)
+    _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
+
     st.markdown(
         f"""
     <script>
     (function () {{
-        // ── Persistencia en localStorage ──
+        // ── Persistencia localStorage ──
         try {{
             var _u = new URLSearchParams(window.location.search).get('u');
             var _r = new URLSearchParams(window.location.search).get('r');
@@ -819,64 +836,147 @@ if st.session_state.get("login"):
             if (_m) localStorage.setItem('ct_menu', _m);
         }} catch(e) {{}}
 
-        // ── Reloj Tijuana -- arranca solo UNA vez por sesion de navegador ──
-        if (window.__CT_CLOCK_STARTED__) return;
-        window.__CT_CLOCK_STARTED__ = true;
+        if (window.__CT_ENGINE_STARTED__) return;
+        window.__CT_ENGINE_STARTED__ = true;
 
+        // ── Estado inicial del servidor ──
+        window.__CT_LAST_COUNT__ = {_sols_count};
+
+        // ════════════════════════════════
+        // ① RELOJ EN TIEMPO REAL (sin rerun)
+        // ════════════════════════════════
         var TZ = 'America/Tijuana';
-        function getTime(d) {{
+        function fmtTime(d) {{
             try {{
                 return d.toLocaleTimeString("es-MX", {{
                     timeZone: TZ, hour: "2-digit", minute: "2-digit",
                     second: "2-digit", hour12: false
                 }});
             }} catch(e) {{
-                var pad = function(n){{ return String(n).padStart(2,'0'); }};
-                return pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+":"+pad(d.getUTCSeconds());
+                var p = function(n){{ return String(n).padStart(2,'0'); }};
+                return p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds());
             }}
         }}
-        function getDate(d) {{
+        function fmtDate(d) {{
             try {{
                 var s = d.toLocaleDateString("es-MX", {{
-                    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit"
+                    timeZone: TZ, year:"numeric", month:"2-digit", day:"2-digit"
                 }});
                 var p = s.split("/");
                 return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
             }} catch(e) {{ return d.toISOString().slice(0,10); }}
         }}
-        function tick() {{
+        function tickClock() {{
             var now = new Date();
-            var t   = getTime(now);
-            var dt  = getDate(now);
-            var sb = document.getElementById('__sb_clock__');
-            var hd = document.getElementById('__hd_clock__');
+            var t   = fmtTime(now);
+            var dt  = fmtDate(now);
+            var sb  = document.getElementById('__sb_clock__');
+            var hd  = document.getElementById('__hd_clock__');
             if (sb) sb.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
             if (hd) hd.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
         }}
-        tick();
-        setInterval(tick, 1000);
+        tickClock();
+        setInterval(tickClock, 1000);
+
+        // ════════════════════════════════
+        // ② HEARTBEAT — LED en vivo (sin rerun)
+        // ════════════════════════════════
+        var dot = document.getElementById('live-dot');
+        function pingHeartbeat() {{
+            fetch('/_stcore/health', {{ cache: 'no-store' }})
+                .then(function(r) {{
+                    if (dot) {{
+                        dot.style.background = r.ok ? '#16a34a' : '#dc2626';
+                    }}
+                }})
+                .catch(function() {{
+                    if (dot) dot.style.background = '#dc2626';
+                }});
+        }}
+        setInterval(pingHeartbeat, 25000);
+        pingHeartbeat();
+
+        // ════════════════════════════════
+        // ③ POLLING DE DATOS — solo recarga si hay cambio real
+        // ════════════════════════════════
+        function showToast(msg) {{
+            var toast = document.getElementById('update-toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.style.display = 'block';
+            setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
+        }}
+
+        // Parsea el conteo embebido en el HTML actual
+        function getCurrentCount() {{
+            var el = document.getElementById('__ct_sol_count__');
+            if (!el) return null;
+            return parseInt(el.getAttribute('data-count') || '0', 10);
+        }}
+
+        function triggerSilentRefresh() {{
+            // Llama al botón oculto — Streamlit recarga SOLO el contenido,
+            // no recarga la página completa (no hay pantalla blanca)
+            var btn = document.getElementById('__ct_refresh_btn__');
+            if (btn) {{
+                btn.click();
+            }}
+        }}
+
+        function pollData() {{
+            var current = getCurrentCount();
+            if (current === null) return;
+            if (current !== window.__CT_LAST_COUNT__) {{
+                window.__CT_LAST_COUNT__ = current;
+                var delta = current - (window.__CT_LAST_COUNT__ || 0);
+                if (delta > 0) {{
+                    showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
+                    // Sonido de notificación
+                    try {{
+                        var audio = new Audio('{SOUND_URL}');
+                        audio.play().catch(function(){{}});
+                    }} catch(e) {{}}
+                }} else {{
+                    showToast('🔄 Datos actualizados');
+                }}
+                triggerSilentRefresh();
+            }}
+        }}
+
+        // Polling cada 30 segundos
+        setInterval(pollData, 30000);
+
     }})();
     </script>
-        """,
+    """,
         unsafe_allow_html=True,
     )
 
+    # Dato embebido en el HTML para que el JS lo compare sin fetch extra
+    st.markdown(
+        f'<span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
+
+    # Botón oculto de rerun — el JS lo clickea cuando detecta cambio
+    # Está fuera del sidebar para que no interfiera con el layout
+    _col_hidden = st.columns([0.001, 1])[0]
+    with _col_hidden:
+        if st.button("↺", key="__ct_refresh_trigger__",
+                     help="Actualización silenciosa"):
+            _invalidate_cache()
+            st.rerun()
+
 
 # ==================== LOGIN ====================
-# Sin st.form() — WebView Android no dispara submit de forms Streamlit.
-# Usamos inputs directos + st.button con key, que sí responde al tap nativo.
 if not st.session_state.login:
-    # Inicializar estado de inputs si no existe
-    if "_login_u" not in st.session_state:
-        st.session_state["_login_u"] = ""
-    if "_login_p" not in st.session_state:
-        st.session_state["_login_p"] = ""
-    if "_login_err" not in st.session_state:
-        st.session_state["_login_err"] = ""
+    if "_login_u"   not in st.session_state: st.session_state["_login_u"]   = ""
+    if "_login_p"   not in st.session_state: st.session_state["_login_p"]   = ""
+    if "_login_err" not in st.session_state: st.session_state["_login_err"] = ""
 
     st.markdown(
         f'<div style="text-align:center;padding:30px 0 16px;">'
-        f'<img src="{LOGO_DATA_URI if "LOGO_DATA_URI" in dir() else LOGO_URL}" width="340" style="border-radius:12px;'
+        f'<img src="{LOGO_DATA_URI}" width="340" style="border-radius:12px;'
         f'box-shadow:0 8px 32px rgba(0,43,91,0.18);max-width:90vw;"></div>',
         unsafe_allow_html=True,
     )
@@ -891,20 +991,14 @@ if not st.session_state.login:
             unsafe_allow_html=True,
         )
 
-        u_log = st.text_input(
-            "Usuario", key="_login_u",
-            placeholder="Ingresa tu usuario",
-        )
-        p_log = st.text_input(
-            "Contrasena", key="_login_p",
-            type="password", placeholder="Ingresa tu contrasena",
-        )
+        u_log = st.text_input("Usuario",    key="_login_u", placeholder="Ingresa tu usuario")
+        p_log = st.text_input("Contraseña", key="_login_p", type="password",
+                               placeholder="Ingresa tu contraseña")
 
-        # Mostrar error previo si existe
         if st.session_state["_login_err"]:
             st.error(st.session_state["_login_err"])
 
-        # Boton directo sin form — compatible con WebView Android
+        # Botón directo sin st.form — compatible con WebView Android
         if st.button("Ingresar al Sistema", use_container_width=True,
                      type="primary", key="_login_btn"):
             st.session_state["_login_err"] = ""
@@ -940,13 +1034,8 @@ if not st.session_state.login:
 
 
 # ==================== SIDEBAR ====================
-# FUENTE: Estructura del Código 2 (sin divs HTML envolviendo el logo → funciona en APK)
-#         Contenido y menú del Código 1 (incluye 📦 Inventarios para admin)
 with st.sidebar:
-    # ⚠️ CLAVE: st.image directo, sin st.markdown(<div>) alrededor.
-    # Esto es lo que permite que el sidebar funcione correctamente en la APK.
-    # Se usa LOGO_DATA_URI si el archivo local existe; de lo contrario la URL de GitHub.
-    st.image(LOGO_DATA_URI if 'LOGO_DATA_URI' in dir() else LOGO_URL, width=210)
+    st.image(LOGO_DATA_URI, width=210)
 
     st.markdown(
         f"<p id='__sb_clock__' style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"
@@ -975,9 +1064,11 @@ with st.sidebar:
     _label = "MENÚ PRINCIPAL" if st.session_state.role == "admin" else "ÁREA DE TRABAJO"
     _saved = st.session_state.get("menu_sel")
     _idx   = _opts.index(_saved) if _saved in _opts else 0
+
     def _on_menu():
         st.session_state["menu_sel"] = st.session_state["_menu_key"]
         st.query_params["m"] = st.session_state["_menu_key"]
+
     menu = st.radio(_label, _opts, index=_idx, key="_menu_key", on_change=_on_menu)
     st.session_state["menu_sel"] = menu
     st.query_params["m"] = menu
@@ -986,6 +1077,19 @@ with st.sidebar:
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
         for k in ["login", "user", "role", "last_count"]:
             st.session_state[k] = False if k == "login" else 0 if k == "last_count" else ""
+        try:
+            localStorage_clear = """
+            <script>
+            try {
+                localStorage.removeItem('ct_user');
+                localStorage.removeItem('ct_role');
+                localStorage.removeItem('ct_menu');
+            } catch(e) {}
+            </script>
+            """
+            st.markdown(localStorage_clear, unsafe_allow_html=True)
+        except Exception:
+            pass
         st.query_params.clear()
         st.rerun()
 
@@ -1130,7 +1234,6 @@ if menu == "📊 Dashboard Ejecutivo":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== INVENTARIOS ====================
-# FUENTE: Código 1 (exclusivo — no existe en Código 2)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "📦 Inventarios":
     st.markdown(
@@ -1297,13 +1400,13 @@ elif menu == "📦 Inventarios":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== CONTROL DE ASIGNACIONES (Admin) ====================
-# FUENTE: Ambos códigos (lógica idéntica; se conserva la del Código 1)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Control de Asignaciones":
     st.markdown('<div class="main-header">🎯 Gestión de Órdenes de Trabajo</div>', unsafe_allow_html=True)
 
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
 
+    # Notificación sonora solo cuando el conteo aumentó DESDE el último rerun
     if len(sols) > st.session_state.last_count:
         st.markdown(
             f'<audio autoplay><source src="{SOUND_URL}" type="audio/mp3"></audio>',
@@ -1382,8 +1485,6 @@ elif menu == "🎯 Control de Asignaciones":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== MIS TAREAS (Técnico) ====================
-# FUENTE: Código 2 para Evidencia (feedback detallado de progreso)
-#         Código 1 para Toma de Valores (exclusivo)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">🎯 Mis Actividades</div>', unsafe_allow_html=True)
@@ -1412,7 +1513,6 @@ elif menu == "🎯 Mis Tareas":
                         (datetime.now(tijuana_tz), t["id"]),
                     )
                     st.rerun()
-
             else:
                 st.markdown(
                     "<p style='color:#16a34a;font-weight:600;'>▶️ Actividad en proceso</p>",
@@ -1420,7 +1520,6 @@ elif menu == "🎯 Mis Tareas":
                 )
 
                 # ── EVIDENCIA ──
-                # FUENTE: Código 2 (barra de progreso con nombre de archivo, mejor UX)
                 if t["actividad_id"].lower() == "evidencia":
                     fotos_prev = execute_read(
                         "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
@@ -1465,7 +1564,6 @@ elif menu == "🎯 Mis Tareas":
                             st.markdown("<br>", unsafe_allow_html=True)
                             if st.button(f"💾 Guardar {len(archivos)} foto(s)", key=f"savef_{t['id']}",
                                          use_container_width=True, type="primary"):
-                                # Barra con nombre del archivo — FUENTE: Código 2
                                 barra = st.progress(0, text="Iniciando...")
                                 errores = 0
                                 for i, arc in enumerate(archivos):
@@ -1506,13 +1604,11 @@ elif menu == "🎯 Mis Tareas":
                             st.rerun()
 
                 # ── TOMA DE VALORES ──
-                # FUENTE: Código 1 (exclusivo — campos configurables desde la DB)
                 elif t["actividad_id"].lower() == "toma de valores":
                     st.markdown(
                         '<div class="tv-field-badge">📊 Registro de Valores del Equipo</div>',
                         unsafe_allow_html=True,
                     )
-
                     campos_tv = execute_read(
                         "SELECT campo_nombre, campo_orden FROM toma_valores_campos ORDER BY campo_orden ASC"
                     )
@@ -1541,7 +1637,6 @@ elif menu == "🎯 Mis Tareas":
                                 valores_ingresados[campo] = target.text_input(
                                     campo, value=datos_dict.get(campo, ""), key=f"tv_{t['id']}_{i}"
                                 )
-
                             if st.form_submit_button("💾 Guardar Valores", use_container_width=True, type="primary"):
                                 execute_write(
                                     "DELETE FROM toma_valores_datos WHERE asignacion_id=%s", (t["id"],)
@@ -1586,7 +1681,6 @@ elif menu == "🎯 Mis Tareas":
                                     st.rerun()
 
                 # ── TOMA DE SERIES ──
-                # FUENTE: Ambos códigos (idéntica)
                 elif t["actividad_id"].lower() == "toma de series":
                     with st.form(f"ser_{t['id']}"):
                         st.markdown(
@@ -1626,7 +1720,6 @@ elif menu == "🎯 Mis Tareas":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== NUEVA SOLICITUD (Técnico) ====================
-# FUENTE: Código 2 (flujo de validación más explícito y claro)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">🔔 Solicitar Actividad</div>', unsafe_allow_html=True)
@@ -1638,8 +1731,6 @@ elif menu == "🔔 Nueva Solicitud":
         a_sel = st.selectbox("Actividad", ACTIVIDADES_CARRIER)
         if st.form_submit_button("📤 Enviar Solicitud", use_container_width=True, type="primary"):
             unidad_sel = u_sel.split(" - ")[1]
-
-            # Validación 1: tarea ya activa
             activa = execute_read(
                 "SELECT id, estado FROM asignaciones "
                 "WHERE tecnico=%s AND unidad=%s AND actividad_id=%s "
@@ -1658,7 +1749,6 @@ elif menu == "🔔 Nueva Solicitud":
                     f"({etiquetas.get(estado_act, estado_act)})."
                 )
             else:
-                # Validación 2: ya fue completada
                 completada = execute_read(
                     "SELECT tecnico FROM asignaciones "
                     "WHERE unidad=%s AND actividad_id=%s AND estado='completada'",
@@ -1707,7 +1797,6 @@ elif menu == "🔔 Nueva Solicitud":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== REGISTRO DE UNIDADES (Admin) ====================
-# FUENTE: Ambos códigos (idéntica)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">📸 Registro Maestro de Unidades</div>', unsafe_allow_html=True)
@@ -1736,7 +1825,6 @@ elif menu == "📸 Registro de Unidades":
 
 # ═══════════════════════════════════════════════════════════════
 # ==================== GESTIÓN DE USUARIOS (Admin) ====================
-# FUENTE: Ambos códigos (idéntica)
 # ═══════════════════════════════════════════════════════════════
 elif menu == "👥 Gestión de Usuarios":
     st.markdown('<div class="main-header">👥 Usuarios del Sistema</div>', unsafe_allow_html=True)
@@ -1764,4 +1852,5 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+
 

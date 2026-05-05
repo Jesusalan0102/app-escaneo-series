@@ -439,45 +439,75 @@ def _get_db_config():
     except Exception:
         return None
 
-def get_db_connection():
-    """Reutiliza la conexión guardada en session_state si sigue viva; crea una nueva si no."""
-    config = _get_db_config()
-    if not config:
-        st.error("⚠️ Error de conexión: No se encontraron credenciales de base de datos.")
+import mysql.connector.pooling as _pooling
+import threading as _threading
+
+_pool_lock = _threading.Lock()
+_db_pool   = None   # pool global, se crea una sola vez por proceso
+
+
+def _get_pool():
+    """Devuelve (o crea) el pool de conexiones MySQL. Máximo 4 conexiones simultáneas."""
+    global _db_pool
+    if _db_pool is not None:
+        return _db_pool
+    with _pool_lock:
+        if _db_pool is not None:         # double-check tras adquirir el lock
+            return _db_pool
+        config = _get_db_config()
+        if not config:
+            return None
+        try:
+            _db_pool = _pooling.MySQLConnectionPool(
+                pool_name="ct_pool",
+                pool_size=4,             # ≤ límite de 5 del servidor
+                pool_reset_session=True,
+                autocommit=True,
+                **config,
+            )
+        except Exception as e:
+            st.error(f"⚠️ No se pudo crear el pool de conexiones: {e}")
+            return None
+    return _db_pool
+
+
+def _pool_conn():
+    """Obtiene una conexión del pool. Úsala siempre dentro de un bloque with/try-finally."""
+    pool = _get_pool()
+    if pool is None:
         return None
-
-    conn = st.session_state.get("_db_conn")
     try:
-        if conn and conn.is_connected():
-            return conn
-    except Exception:
-        conn = None
-
-    try:
-        conn = mysql.connector.connect(**config, autocommit=True)
-        st.session_state["_db_conn"] = conn
-        return conn
+        return pool.get_connection()
     except Exception as e:
         st.error(f"⚠️ Error de conexión: {e}")
         return None
+
+
+# Alias para compatibilidad (ya no se guarda en session_state)
+def get_db_connection():
+    return _pool_conn()
 
 
 @st.cache_data(ttl=8, show_spinner=False)
 def _cached_read(query: str, params: tuple):
     """Ejecuta SELECT y cachea el resultado 8 segundos.
     Llama a _invalidate_cache() después de cualquier escritura para forzar refresco."""
-    config = _get_db_config()
-    if not config:
+    conn = _pool_conn()
+    if conn is None:
         return []
     try:
-        conn = mysql.connector.connect(**config, autocommit=True)
-        cur  = conn.cursor(dictionary=True)
+        cur = conn.cursor(dictionary=True)
         cur.execute(query, params)
-        res  = cur.fetchall()
-        cur.close(); conn.close()
+        res = cur.fetchall()
+        cur.close()
         return res
-    except Exception as e:
+    except Exception:
         return []
+    finally:
+        try:
+            conn.close()   # devuelve la conexión al pool (no la cierra físicamente)
+        except Exception:
+            pass
 
 
 def execute_read(query, params=None):
@@ -491,7 +521,7 @@ def _invalidate_cache():
 
 
 def execute_write(query, params=None):
-    conn = get_db_connection()
+    conn = _pool_conn()
     if conn:
         try:
             cur = conn.cursor()
@@ -502,6 +532,11 @@ def execute_write(query, params=None):
         except Exception as e:
             st.error(f"Error en base de datos: {e}")
             return False
+        finally:
+            try:
+                conn.close()   # siempre devuelve al pool
+            except Exception:
+                pass
     return False
 
 def init_extra_tables():
@@ -547,8 +582,6 @@ defaults = {
     "role":         "",
     "last_count":   0,
     "menu_sel":     None,
-    # Persistencia de formularios — sobreviven reruns y F5 via query_params
-    "_db_conn":     None,   # conexión reutilizable
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -590,15 +623,15 @@ if not st.session_state.login:
     """, unsafe_allow_html=True)
 
 # Reloj JS continuo. CERO recargas automáticas de página.
-# setInterval actualiza sidebar y header cada 1 segundo en el cliente.
-# localStorage guarda usuario/rol/menú para sobrevivir F5 sin depender solo de query_params.
+# Guard window.__CT_CLOCK_STARTED__ garantiza que setInterval se crea UNA SOLA VEZ
+# aunque Streamlit inyecte el script en cada rerun.
+# En cada tick() se re-buscan los elementos por ID por si Streamlit los recreo en el DOM.
 if st.session_state.get("login"):
     st.markdown(
         f"""
     <script>
     (function () {{
         // ── Persistencia en localStorage ──
-        // Guarda usuario, rol y menú actual para que F5 no pierda nada.
         try {{
             var _u = new URLSearchParams(window.location.search).get('u');
             var _r = new URLSearchParams(window.location.search).get('r');
@@ -608,11 +641,11 @@ if st.session_state.get("login"):
             if (_m) localStorage.setItem('ct_menu', _m);
         }} catch(e) {{}}
 
-        // ── Reloj Tijuana ──
+        // ── Reloj Tijuana -- arranca solo UNA vez por sesion de navegador ──
+        if (window.__CT_CLOCK_STARTED__) return;
+        window.__CT_CLOCK_STARTED__ = true;
+
         var TZ = 'America/Tijuana';
-        var sb = null;
-        var hd = null;
-        function pad(n) {{ return String(n).padStart(2, "0"); }}
         function getTime(d) {{
             try {{
                 return d.toLocaleTimeString("es-MX", {{
@@ -620,6 +653,7 @@ if st.session_state.get("login"):
                     second: "2-digit", hour12: false
                 }});
             }} catch(e) {{
+                var pad = function(n){{ return String(n).padStart(2,'0'); }};
                 return pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+":"+pad(d.getUTCSeconds());
             }}
         }}
@@ -636,10 +670,10 @@ if st.session_state.get("login"):
             var now = new Date();
             var t   = getTime(now);
             var dt  = getDate(now);
-            if (!sb) sb = document.getElementById('__sb_clock__');
-            if (sb)  sb.innerHTML = '🕒 <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
-            if (!hd) hd = document.getElementById('__hd_clock__');
-            if (hd)  hd.textContent = '🕒 Tijuana: ' + t;
+            var sb = document.getElementById('__sb_clock__');
+            var hd = document.getElementById('__hd_clock__');
+            if (sb) sb.innerHTML = '\ud83d\udd52 <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
+            if (hd) hd.textContent = '\ud83d\udd52 Tijuana: ' + t;
         }}
         tick();
         setInterval(tick, 1000);
@@ -1521,5 +1555,3 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
-
-

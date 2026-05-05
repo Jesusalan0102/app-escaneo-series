@@ -439,105 +439,137 @@ def _get_db_config():
     except Exception:
         return None
 
-import mysql.connector.pooling as _pooling
 import threading as _threading
+import queue as _queue
+import time as _time
 
-_pool_lock = _threading.Lock()
-_db_pool   = None   # pool global, se crea una sola vez por proceso
+# =====================================================================
+#  CAPA DE BASE DE DATOS  —  conexion unica + escrituras en segundo plano
+# =====================================================================
+#  El servidor limita a 5 conexiones simultaneas por usuario.
+#  Solucion: un solo objeto mysql.connector por proceso Streamlit,
+#  protegido por Lock para acceso serializado.
+#  Las escrituras van a una cola consumida por un hilo daemon (write-queue)
+#  con hasta 4 reintentos y backoff, para que la UI nunca se bloquee
+#  ni pierda datos aunque la BD este momentaneamente saturada.
+# =====================================================================
 
-
-def _get_pool():
-    """Devuelve (o crea) el pool de conexiones MySQL. Máximo 4 conexiones simultáneas."""
-    global _db_pool
-    if _db_pool is not None:
-        return _db_pool
-    with _pool_lock:
-        if _db_pool is not None:         # double-check tras adquirir el lock
-            return _db_pool
-        config = _get_db_config()
-        if not config:
-            return None
-        try:
-            _db_pool = _pooling.MySQLConnectionPool(
-                pool_name="ct_pool",
-                pool_size=4,             # ≤ límite de 5 del servidor
-                pool_reset_session=True,
-                autocommit=True,
-                **config,
-            )
-        except Exception as e:
-            st.error(f"⚠️ No se pudo crear el pool de conexiones: {e}")
-            return None
-    return _db_pool
+_db_lock = _threading.RLock()   # RLock: el mismo hilo puede re-adquirirlo
+_db_conn_holder = [None]         # lista-de-1 para mutabilidad en closure
 
 
-def _pool_conn():
-    """Obtiene una conexión del pool. Úsala siempre dentro de un bloque with/try-finally."""
-    pool = _get_pool()
-    if pool is None:
+def _open_conn():
+    config = _get_db_config()
+    if not config:
         return None
     try:
-        return pool.get_connection()
-    except Exception as e:
-        st.error(f"⚠️ Error de conexión: {e}")
+        return mysql.connector.connect(
+            **config,
+            autocommit=True,
+            connection_timeout=10,
+        )
+    except Exception:
         return None
 
 
-# Alias para compatibilidad (ya no se guarda en session_state)
-def get_db_connection():
-    return _pool_conn()
+def _get_conn():
+    """Devuelve la conexion del proceso, reconectando si murio."""
+    with _db_lock:
+        conn = _db_conn_holder[0]
+        try:
+            if conn and conn.is_connected():
+                return conn
+        except Exception:
+            pass
+        conn = _open_conn()
+        _db_conn_holder[0] = conn
+        return conn
 
 
+# ── Cola de escrituras en segundo plano ──────────────────────────────
+_wq = _queue.Queue()
+_wq_ready = _threading.Event()
+
+
+def _write_worker():
+    _wq_ready.set()
+    while True:
+        item = _wq.get()
+        if item is None:
+            break
+        query, params, ev, box = item
+        ok = False
+        for attempt in range(4):
+            conn = _get_conn()
+            if conn is None:
+                _time.sleep(1.5 * (attempt + 1))
+                continue
+            try:
+                with _db_lock:
+                    cur = conn.cursor()
+                    cur.execute(query, params or ())
+                    cur.close()
+                ok = True
+                break
+            except Exception:
+                _time.sleep(0.8 * (attempt + 1))
+        box.append(ok)
+        if ev:
+            ev.set()
+        _wq.task_done()
+
+
+_wt = _threading.Thread(target=_write_worker, daemon=True, name="ct_wq")
+_wt.start()
+_wq_ready.wait(timeout=3)
+
+
+# ── Lecturas cacheadas ────────────────────────────────────────────────
 @st.cache_data(ttl=8, show_spinner=False)
 def _cached_read(query: str, params: tuple):
-    """Ejecuta SELECT y cachea el resultado 8 segundos.
-    Llama a _invalidate_cache() después de cualquier escritura para forzar refresco."""
-    conn = _pool_conn()
+    conn = _get_conn()
     if conn is None:
         return []
     try:
-        cur = conn.cursor(dictionary=True)
-        cur.execute(query, params)
-        res = cur.fetchall()
-        cur.close()
+        with _db_lock:
+            cur = conn.cursor(dictionary=True)
+            cur.execute(query, params)
+            res = cur.fetchall()
+            cur.close()
         return res
     except Exception:
         return []
-    finally:
-        try:
-            conn.close()   # devuelve la conexión al pool (no la cierra físicamente)
-        except Exception:
-            pass
 
 
 def execute_read(query, params=None):
-    """Wrapper público — usa cache automáticamente."""
     return _cached_read(query, tuple(params) if params else ())
 
 
 def _invalidate_cache():
-    """Limpia todo el cache de lectura para que el siguiente execute_read vaya a la BD."""
     _cached_read.clear()
 
 
-def execute_write(query, params=None):
-    conn = _pool_conn()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute(query, params or ())
-            cur.close()
-            _invalidate_cache()   # ← datos frescos en el próximo rerun
-            return True
-        except Exception as e:
-            st.error(f"Error en base de datos: {e}")
-            return False
-        finally:
-            try:
-                conn.close()   # siempre devuelve al pool
-            except Exception:
-                pass
-    return False
+# ── Escrituras publicas ───────────────────────────────────────────────
+def execute_write(query, params=None, wait=True):
+    """Encola la escritura en el hilo de fondo.
+    wait=True  → espera confirmacion hasta 5 s (default).
+    wait=False → fire-and-forget, sin bloquear la UI."""
+    ev  = _threading.Event() if wait else None
+    box = []
+    _wq.put((query, params, ev, box))
+    if wait and ev:
+        ev.wait(timeout=5)
+        ok = bool(box and box[0])
+    else:
+        ok = True
+    if ok:
+        _invalidate_cache()
+    return ok
+
+
+def get_db_connection():
+    """Alias de compatibilidad."""
+    return _get_conn()
 
 def init_extra_tables():
     """Crea las tablas adicionales si no existen (necesarias para Inventarios y Toma de Valores)."""

@@ -795,6 +795,72 @@ if not st.session_state.login:
     """, unsafe_allow_html=True)
 
 
+# ==================== LOGIN ====================
+if not st.session_state.login:
+    if "_login_u"   not in st.session_state: st.session_state["_login_u"]   = ""
+    if "_login_p"   not in st.session_state: st.session_state["_login_p"]   = ""
+    if "_login_err" not in st.session_state: st.session_state["_login_err"] = ""
+
+    st.markdown(
+        f'<div style="text-align:center;padding:30px 0 16px;">'
+        f'<img src="{LOGO_DATA_URI}" width="340" style="border-radius:12px;'
+        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);max-width:90vw;"></div>',
+        unsafe_allow_html=True,
+    )
+    _, col_c, _ = st.columns([1, 2, 1])
+    with col_c:
+        st.markdown('<div class="login-card">', unsafe_allow_html=True)
+        st.markdown(
+            f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:4px;"
+            f"font-family:Inter,sans-serif;font-weight:800;font-size:1.3rem;'>Carrier Transicold</h3>"
+            f"<p style='text-align:center;color:#6b7280;margin-bottom:20px;font-size:0.85rem;'>"
+            f"Sistema Operativo — Panel de Acceso</p>",
+            unsafe_allow_html=True,
+        )
+
+        u_log = st.text_input("Usuario",    key="_login_u", placeholder="Ingresa tu usuario")
+        p_log = st.text_input("Contraseña", key="_login_p", type="password",
+                               placeholder="Ingresa tu contraseña")
+
+        if st.session_state["_login_err"]:
+            st.error(st.session_state["_login_err"])
+
+        # Botón directo sin st.form — compatible con WebView Android
+        if st.button("Ingresar al Sistema", use_container_width=True,
+                     type="primary", key="_login_btn"):
+            st.session_state["_login_err"] = ""
+            with st.spinner("Verificando..."):
+                user = _direct_read(
+                    "SELECT * FROM users WHERE username=%s AND password=%s",
+                    (u_log.strip(), p_log.strip()),
+                )
+            if user is None:
+                st.session_state["_login_err"] = "No se pudo conectar. Intenta en unos segundos."
+                st.rerun()
+            elif len(user) == 0:
+                st.session_state["_login_err"] = "Credenciales incorrectas. Intenta de nuevo."
+                st.rerun()
+            else:
+                st.session_state.update({
+                    "login": True,
+                    "user":  user[0]["username"],
+                    "role":  user[0]["role"].lower(),
+                    "_login_err": "",
+                })
+                st.query_params["u"] = user[0]["username"]
+                st.query_params["r"] = user[0]["role"].lower()
+                st.rerun()
+
+        st.markdown(
+            f"<p style='text-align:center;margin-top:14px;font-size:0.75rem;color:#9ca3af;'>"
+            f"© {fecha_hoy[:4]} Carrier Transicold</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+
+
 # ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
 # ─────────────────────────────────────────────────────────────────────────
 # CÓMO FUNCIONA (sin recargar la página):
@@ -915,9 +981,9 @@ if st.session_state.get("login"):
         }}
 
         function triggerSilentRefresh() {{
-            // Llama al botón oculto — Streamlit recarga SOLO el contenido,
-            // no recarga la página completa (no hay pantalla blanca)
-            var btn = document.getElementById('__ct_refresh_btn__');
+            
+
+            var btn = document.querySelector('button[title="Actualización silenciosa"]');
             if (btn) {{
                 btn.click();
             }}
@@ -958,79 +1024,27 @@ if st.session_state.get("login"):
         unsafe_allow_html=True,
     )
 
-    # Botón oculto de rerun — el JS lo clickea cuando detecta cambio
-    # Está fuera del sidebar para que no interfiera con el layout
-    _col_hidden = st.columns([0.001, 1])[0]
-    with _col_hidden:
-        if st.button("↺", key="__ct_refresh_trigger__",
-                     help="Actualización silenciosa"):
-            _invalidate_cache()
-            st.rerun()
+    # CSS para ocultar visualmente el botón de rerun sin romper el layout
+    st.markdown("""
+    <style>
+    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"][title="Actualización silenciosa"]) {
+        position: fixed !important;
+        bottom: -200px !important;
+        left: -200px !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-
-# ==================== LOGIN ====================
-if not st.session_state.login:
-    if "_login_u"   not in st.session_state: st.session_state["_login_u"]   = ""
-    if "_login_p"   not in st.session_state: st.session_state["_login_p"]   = ""
-    if "_login_err" not in st.session_state: st.session_state["_login_err"] = ""
-
-    st.markdown(
-        f'<div style="text-align:center;padding:30px 0 16px;">'
-        f'<img src="{LOGO_DATA_URI}" width="340" style="border-radius:12px;'
-        f'box-shadow:0 8px 32px rgba(0,43,91,0.18);max-width:90vw;"></div>',
-        unsafe_allow_html=True,
-    )
-    _, col_c, _ = st.columns([1, 2, 1])
-    with col_c:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        st.markdown(
-            f"<h3 style='text-align:center;color:{CARRIER_BLUE};margin-bottom:4px;"
-            f"font-family:Inter,sans-serif;font-weight:800;font-size:1.3rem;'>Carrier Transicold</h3>"
-            f"<p style='text-align:center;color:#6b7280;margin-bottom:20px;font-size:0.85rem;'>"
-            f"Sistema Operativo — Panel de Acceso</p>",
-            unsafe_allow_html=True,
-        )
-
-        u_log = st.text_input("Usuario",    key="_login_u", placeholder="Ingresa tu usuario")
-        p_log = st.text_input("Contraseña", key="_login_p", type="password",
-                               placeholder="Ingresa tu contraseña")
-
-        if st.session_state["_login_err"]:
-            st.error(st.session_state["_login_err"])
-
-        # Botón directo sin st.form — compatible con WebView Android
-        if st.button("Ingresar al Sistema", use_container_width=True,
-                     type="primary", key="_login_btn"):
-            st.session_state["_login_err"] = ""
-            with st.spinner("Verificando..."):
-                user = _direct_read(
-                    "SELECT * FROM users WHERE username=%s AND password=%s",
-                    (u_log.strip(), p_log.strip()),
-                )
-            if user is None:
-                st.session_state["_login_err"] = "No se pudo conectar. Intenta en unos segundos."
-                st.rerun()
-            elif len(user) == 0:
-                st.session_state["_login_err"] = "Credenciales incorrectas. Intenta de nuevo."
-                st.rerun()
-            else:
-                st.session_state.update({
-                    "login": True,
-                    "user":  user[0]["username"],
-                    "role":  user[0]["role"].lower(),
-                    "_login_err": "",
-                })
-                st.query_params["u"] = user[0]["username"]
-                st.query_params["r"] = user[0]["role"].lower()
-                st.rerun()
-
-        st.markdown(
-            f"<p style='text-align:center;margin-top:14px;font-size:0.75rem;color:#9ca3af;'>"
-            f"© {fecha_hoy[:4]} Carrier Transicold</p>",
-            unsafe_allow_html=True,
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.stop()
+    # Botón de rerun silencioso — el JS lo clickea por data-testid, nunca visible
+    if st.button("↺", key="__ct_refresh_trigger__",
+                 help="Actualización silenciosa"):
+        _invalidate_cache()
+        st.rerun()
 
 
 # ==================== SIDEBAR ====================
@@ -1852,5 +1866,3 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
-
-

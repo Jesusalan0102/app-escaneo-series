@@ -459,17 +459,41 @@ _db_conn_holder = [None]         # lista-de-1 para mutabilidad en closure
 
 
 def _open_conn():
+    """Abre una conexion fresca con hasta 5 reintentos y backoff."""
     config = _get_db_config()
     if not config:
         return None
-    try:
-        return mysql.connector.connect(
-            **config,
-            autocommit=True,
-            connection_timeout=10,
-        )
-    except Exception:
-        return None
+    for attempt in range(5):
+        try:
+            return mysql.connector.connect(
+                **config,
+                autocommit=True,
+                connection_timeout=10,
+            )
+        except Exception:
+            if attempt < 4:
+                _time.sleep(1.0 * (attempt + 1))
+    return None
+
+
+def _direct_read(query, params=()):
+    """Lectura directa SIN cache, con reintentos. Usar solo en login."""
+    for attempt in range(4):
+        conn = _get_conn()
+        if conn is None:
+            _time.sleep(1.5 * (attempt + 1))
+            continue
+        try:
+            with _db_lock:
+                cur = conn.cursor(dictionary=True)
+                cur.execute(query, params)
+                res = cur.fetchall()
+                cur.close()
+            return res
+        except Exception:
+            _db_conn_holder[0] = None   # fuerza reconexion en siguiente intento
+            _time.sleep(0.8 * (attempt + 1))
+    return None   # None = fallo real de BD (distinto de [] = no encontrado)
 
 
 def _get_conn():
@@ -738,11 +762,18 @@ if not st.session_state.login:
             u_log = st.text_input("👤 Usuario")
             p_log = st.text_input("🔑 Contraseña", type="password")
             if st.form_submit_button("🚀 Ingresar al Sistema", use_container_width=True, type="primary"):
-                user = execute_read(
-                    "SELECT * FROM users WHERE username=%s AND password=%s",
-                    (u_log.strip(), p_log.strip()),
-                )
-                if user:
+                # Login usa lectura directa SIN cache para evitar falsos negativos
+                # cuando la BD estuvo momentaneamente saturada.
+                with st.spinner("Verificando credenciales..."):
+                    user = _direct_read(
+                        "SELECT * FROM users WHERE username=%s AND password=%s",
+                        (u_log.strip(), p_log.strip()),
+                    )
+                if user is None:
+                    st.error("⚠️ No se pudo conectar a la base de datos. Intenta en unos segundos.")
+                elif len(user) == 0:
+                    st.error("❌ Credenciales incorrectas. Intenta de nuevo.")
+                else:
                     st.session_state.update({
                         "login": True,
                         "user":  user[0]["username"],
@@ -751,8 +782,6 @@ if not st.session_state.login:
                     st.query_params["u"] = user[0]["username"]
                     st.query_params["r"] = user[0]["role"].lower()
                     st.rerun()
-                else:
-                    st.error("❌ Credenciales incorrectas. Intenta de nuevo.")
         st.markdown(
             f"<p style='text-align:center;margin-top:18px;font-size:0.78rem;color:#9ca3af;'>"
             f"© {fecha_hoy[:4]} Carrier Transicold · Todos los derechos reservados</p>",

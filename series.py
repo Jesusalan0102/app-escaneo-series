@@ -440,28 +440,55 @@ def _get_db_config():
         return None
 
 def get_db_connection():
+    """Reutiliza la conexión guardada en session_state si sigue viva; crea una nueva si no."""
     config = _get_db_config()
     if not config:
         st.error("⚠️ Error de conexión: No se encontraron credenciales de base de datos.")
         return None
+
+    conn = st.session_state.get("_db_conn")
     try:
-        return mysql.connector.connect(**config, autocommit=True)
+        if conn and conn.is_connected():
+            return conn
+    except Exception:
+        conn = None
+
+    try:
+        conn = mysql.connector.connect(**config, autocommit=True)
+        st.session_state["_db_conn"] = conn
+        return conn
     except Exception as e:
         st.error(f"⚠️ Error de conexión: {e}")
         return None
 
+
+@st.cache_data(ttl=8, show_spinner=False)
+def _cached_read(query: str, params: tuple):
+    """Ejecuta SELECT y cachea el resultado 8 segundos.
+    Llama a _invalidate_cache() después de cualquier escritura para forzar refresco."""
+    config = _get_db_config()
+    if not config:
+        return []
+    try:
+        conn = mysql.connector.connect(**config, autocommit=True)
+        cur  = conn.cursor(dictionary=True)
+        cur.execute(query, params)
+        res  = cur.fetchall()
+        cur.close(); conn.close()
+        return res
+    except Exception as e:
+        return []
+
+
 def execute_read(query, params=None):
-    conn = get_db_connection()
-    if conn:
-        try:
-            cur = conn.cursor(dictionary=True)
-            cur.execute(query, params or ())
-            res = cur.fetchall()
-            cur.close(); conn.close()
-            return res
-        except Exception as e:
-            st.error(f"Error de consulta: {e}")
-    return []
+    """Wrapper público — usa cache automáticamente."""
+    return _cached_read(query, tuple(params) if params else ())
+
+
+def _invalidate_cache():
+    """Limpia todo el cache de lectura para que el siguiente execute_read vaya a la BD."""
+    _cached_read.clear()
+
 
 def execute_write(query, params=None):
     conn = get_db_connection()
@@ -469,7 +496,8 @@ def execute_write(query, params=None):
         try:
             cur = conn.cursor()
             cur.execute(query, params or ())
-            cur.close(); conn.close()
+            cur.close()
+            _invalidate_cache()   # ← datos frescos en el próximo rerun
             return True
         except Exception as e:
             st.error(f"Error en base de datos: {e}")
@@ -513,7 +541,15 @@ init_extra_tables()
 
 
 # ==================== ESTADO DE SESIÓN ====================
-defaults = {"login": False, "user": "", "role": "", "last_count": 0, "menu_sel": None}
+defaults = {
+    "login":        False,
+    "user":         "",
+    "role":         "",
+    "last_count":   0,
+    "menu_sel":     None,
+    # Persistencia de formularios — sobreviven reruns y F5 via query_params
+    "_db_conn":     None,   # conexión reutilizable
+}
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -527,37 +563,76 @@ if not st.session_state.login and params.get("u") and params.get("r"):
 if params.get("m") and st.session_state.get("menu_sel") is None:
     st.session_state["menu_sel"] = params["m"]
 
-# Reloj JS continuo. CERO recargas automaticas de pagina.
+# Fallback: si los query_params fueron borrados por el navegador pero localStorage los tiene,
+# inyectamos un snippet JS que los restaura en la URL y fuerza un rerun silencioso.
+if not st.session_state.login:
+    st.markdown("""
+    <script>
+    (function() {
+        var u = null, r = null, m = null;
+        try {
+            u = localStorage.getItem('ct_user');
+            r = localStorage.getItem('ct_role');
+            m = localStorage.getItem('ct_menu');
+        } catch(e) { return; }
+        if (u && r) {
+            var sp = new URLSearchParams(window.location.search);
+            if (!sp.get('u')) {
+                sp.set('u', u);
+                sp.set('r', r);
+                if (m) sp.set('m', m);
+                // Redirige con los params restaurados → Streamlit los leerá en el próximo ciclo
+                window.location.search = sp.toString();
+            }
+        }
+    })();
+    </script>
+    """, unsafe_allow_html=True)
+
+# Reloj JS continuo. CERO recargas automáticas de página.
 # setInterval actualiza sidebar y header cada 1 segundo en el cliente.
+# localStorage guarda usuario/rol/menú para sobrevivir F5 sin depender solo de query_params.
 if st.session_state.get("login"):
     st.markdown(
-        """
+        f"""
     <script>
-    (function () {
+    (function () {{
+        // ── Persistencia en localStorage ──
+        // Guarda usuario, rol y menú actual para que F5 no pierda nada.
+        try {{
+            var _u = new URLSearchParams(window.location.search).get('u');
+            var _r = new URLSearchParams(window.location.search).get('r');
+            var _m = new URLSearchParams(window.location.search).get('m');
+            if (_u) localStorage.setItem('ct_user', _u);
+            if (_r) localStorage.setItem('ct_role', _r);
+            if (_m) localStorage.setItem('ct_menu', _m);
+        }} catch(e) {{}}
+
+        // ── Reloj Tijuana ──
         var TZ = 'America/Tijuana';
         var sb = null;
         var hd = null;
-        function pad(n) { return String(n).padStart(2, "0"); }
-        function getTime(d) {
-            try {
-                return d.toLocaleTimeString("es-MX", {
+        function pad(n) {{ return String(n).padStart(2, "0"); }}
+        function getTime(d) {{
+            try {{
+                return d.toLocaleTimeString("es-MX", {{
                     timeZone: TZ, hour: "2-digit", minute: "2-digit",
                     second: "2-digit", hour12: false
-                });
-            } catch(e) {
+                }});
+            }} catch(e) {{
                 return pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+":"+pad(d.getUTCSeconds());
-            }
-        }
-        function getDate(d) {
-            try {
-                var s = d.toLocaleDateString("es-MX", {
+            }}
+        }}
+        function getDate(d) {{
+            try {{
+                var s = d.toLocaleDateString("es-MX", {{
                     timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit"
-                });
+                }});
                 var p = s.split("/");
                 return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
-            } catch(e) { return d.toISOString().slice(0,10); }
-        }
-        function tick() {
+            }} catch(e) {{ return d.toISOString().slice(0,10); }}
+        }}
+        function tick() {{
             var now = new Date();
             var t   = getTime(now);
             var dt  = getDate(now);
@@ -565,10 +640,10 @@ if st.session_state.get("login"):
             if (sb)  sb.innerHTML = '🕒 <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
             if (!hd) hd = document.getElementById('__hd_clock__');
             if (hd)  hd.textContent = '🕒 Tijuana: ' + t;
-        }
+        }}
         tick();
         setInterval(tick, 1000);
-    })();
+    }})();
     </script>
         """,
         unsafe_allow_html=True,

@@ -672,8 +672,8 @@ if st.session_state.get("login"):
             var dt  = getDate(now);
             var sb = document.getElementById('__sb_clock__');
             var hd = document.getElementById('__hd_clock__');
-            if (sb) sb.innerHTML = '\ud83d\udd52 <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
-            if (hd) hd.textContent = '\ud83d\udd52 Tijuana: ' + t;
+            if (sb) sb.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
+            if (hd) hd.textContent = '\u{1F552} Tijuana: ' + t;
         }}
         tick();
         setInterval(tick, 1000);
@@ -1555,3 +1555,4 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+

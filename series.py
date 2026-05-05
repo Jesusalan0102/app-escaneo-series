@@ -673,7 +673,7 @@ if st.session_state.get("login"):
             var sb = document.getElementById('__sb_clock__');
             var hd = document.getElementById('__hd_clock__');
             if (sb) sb.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
-            if (hd) hd.textContent = '\u{1F552} Tijuana: ' + t;
+            if (hd) hd.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
         }}
         tick();
         setInterval(tick, 1000);

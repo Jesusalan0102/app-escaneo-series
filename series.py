@@ -601,22 +601,35 @@ def _open_conn():
 
 
 def _direct_read(query, params=()):
-    """Lectura directa sin caché — usada en login."""
+    """Lectura directa sin caché — usada en login.
+    Abre su propia conexión para evitar bloqueos del write-worker."""
+    last_err = None
     for attempt in range(4):
-        conn = _get_conn()
-        if conn is None:
-            _time.sleep(1.5 * (attempt + 1))
-            continue
+        conn = None
         try:
-            with _db_lock:
-                cur = conn.cursor(dictionary=True)
-                cur.execute(query, params)
-                res = cur.fetchall()
-                cur.close()
+            config = _get_db_config()
+            if not config:
+                return None
+            conn = mysql.connector.connect(
+                **config,
+                autocommit=True,
+                connection_timeout=10,
+            )
+            cur = conn.cursor(dictionary=True)
+            cur.execute(query, params)
+            res = cur.fetchall()
+            cur.close()
             return res
-        except Exception:
-            _db_conn_holder[0] = None
+        except Exception as e:
+            last_err = e
             _time.sleep(0.8 * (attempt + 1))
+        finally:
+            try:
+                if conn and conn.is_connected():
+                    conn.close()
+            except Exception:
+                pass
+    # Devuelve None solo si falló la conexión, lista vacía si no hay registros
     return None
 
 
@@ -829,27 +842,45 @@ if not st.session_state.login:
         if st.button("Ingresar al Sistema", use_container_width=True,
                      type="primary", key="_login_btn"):
             st.session_state["_login_err"] = ""
-            with st.spinner("Verificando..."):
-                user = _direct_read(
-                    "SELECT * FROM users WHERE username=%s AND password=%s",
-                    (u_log.strip(), p_log.strip()),
-                )
-            if user is None:
-                st.session_state["_login_err"] = "No se pudo conectar. Intenta en unos segundos."
-                st.rerun()
-            elif len(user) == 0:
-                st.session_state["_login_err"] = "Credenciales incorrectas. Intenta de nuevo."
+            # Leer desde session_state (los widgets con key guardan ahí su valor)
+            _u = st.session_state.get("_login_u", "").strip()
+            _p = st.session_state.get("_login_p", "").strip()
+            if not _u or not _p:
+                st.session_state["_login_err"] = "⚠️ Ingresa usuario y contraseña."
                 st.rerun()
             else:
-                st.session_state.update({
-                    "login": True,
-                    "user":  user[0]["username"],
-                    "role":  user[0]["role"].lower(),
-                    "_login_err": "",
-                })
-                st.query_params["u"] = user[0]["username"]
-                st.query_params["r"] = user[0]["role"].lower()
-                st.rerun()
+                with st.spinner("Verificando..."):
+                    user = _direct_read(
+                        "SELECT * FROM users WHERE username=%s AND password=%s",
+                        (_u, _p),
+                    )
+                if user is None:
+                    st.session_state["_login_err"] = (
+                        "❌ No se pudo conectar a la base de datos. "
+                        "Verifica los secrets de Streamlit o intenta en unos segundos."
+                    )
+                    # Limpiar localStorage para evitar loop de sesión fantasma
+                    st.markdown("""<script>
+                    try {
+                        localStorage.removeItem('ct_user');
+                        localStorage.removeItem('ct_role');
+                        localStorage.removeItem('ct_menu');
+                    } catch(e){}
+                    </script>""", unsafe_allow_html=True)
+                    st.rerun()
+                elif len(user) == 0:
+                    st.session_state["_login_err"] = "❌ Credenciales incorrectas. Intenta de nuevo."
+                    st.rerun()
+                else:
+                    st.session_state.update({
+                        "login": True,
+                        "user":  user[0]["username"],
+                        "role":  user[0]["role"].lower(),
+                        "_login_err": "",
+                    })
+                    st.query_params["u"] = user[0]["username"]
+                    st.query_params["r"] = user[0]["role"].lower()
+                    st.rerun()
 
         st.markdown(
             f"<p style='text-align:center;margin-top:14px;font-size:0.75rem;color:#9ca3af;'>"

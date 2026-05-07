@@ -101,29 +101,42 @@ section[data-testid="stSidebar"] > div:first-child {{ background: linear-gradien
 # ==================== BASE DE DATOS OPTIMIZADA ====================
 def _get_db_config():
     import os
-    config = {
-        "host": "bmffi0bgsqnener2omcu-mysql.services.clever-cloud.com",
-        "database": "bmffi0bgsqnener2omcu",
-        "user": "uo8vbdsnvm2ojwta",
-        "password": "aXSKib5oxXDEwjlozeQP",
-        "port": 3306,
-        "connection_timeout": 30,
-        "autocommit": True,
-        "use_pure": True,
-    }
-    env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
-    if env_host:
+    from streamlit import secrets
+    try:
+        # Leer variables individuales desde secrets o variables de entorno
+        db_host = secrets.get("DB_HOST") or os.environ.get("DB_HOST")
+        db_port = int(secrets.get("DB_PORT", 4000)) or int(os.environ.get("DB_PORT", 4000))
+        db_user = secrets.get("DB_USER") or os.environ.get("DB_USER")
+        db_password = secrets.get("DB_PASSWORD") or os.environ.get("DB_PASSWORD")
+        db_name = secrets.get("DB_NAME") or os.environ.get("DB_NAME")
+
+        # Verificar que no sean None
+        if all([db_host, db_user, db_password, db_name]):
+            return {
+                "host": db_host,
+                "port": db_port,
+                "user": db_user,
+                "password": db_password,
+                "database": db_name,
+                "connection_timeout": 30,
+                "autocommit": True,
+                "use_pure": True,
+            }
+        else:
+            st.error("Faltan variables de entorno o secrets de base de datos")
+            return None
+    except Exception:
+        # Fallback local (solo para pruebas, no subir)
         return {
-            "host": env_host,
-            "database": os.environ.get("STREAMLIT_SECRETS_DB_DATABASE"),
-            "user": os.environ.get("STREAMLIT_SECRETS_DB_USER"),
-            "password": os.environ.get("STREAMLIT_SECRETS_DB_PASSWORD"),
-            "port": int(os.environ.get("STREAMLIT_SECRETS_DB_PORT", 3306)),
+            "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
+            "port": 4000,
+            "user": "4BgYs96t9XXhCMS.root",
+            "password": "YZcSUhQ5H7Gx9vLk",
+            "database": "carrier_db",
             "connection_timeout": 30,
             "autocommit": True,
             "use_pure": True,
         }
-    return config
 
 _db_lock = threading.RLock()
 _db_conn_holder = [None]

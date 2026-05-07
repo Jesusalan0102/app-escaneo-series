@@ -541,8 +541,25 @@ st.markdown("""
 
 # ==================== BASE DE DATOS (CORREGIDA Y ROBUSTA) ====================
 def _get_db_config():
-    """Lee configuración desde variables de entorno de Streamlit Cloud."""
-    # Prioridad: variables STREAMLIT_SECRETS_DB_*
+    """Lee configuración según el entorno."""
+    
+    # === DETECTAR APK / MÓVIL ===
+    # Si la app corre en Android (APK)
+    import sys
+    if hasattr(sys, 'getandroidapilevel') or 'android' in sys.platform:
+        # Usar credenciales hardcodeadas para APK
+        return {
+            "host": "bmffi0bgsqnener2omcu-mysql.services.clever-cloud.com",
+            "database": "bmffi0bgsqnener2omcu",
+            "user": "uo8vbdsnvm2ojwta",
+            "password": "aXSKib5oxXDEwjlozeQP",  # Contraseña corregida
+            "port": 3306,
+            "connection_timeout": 30,
+            "autocommit": True,
+            "use_pure": True,
+        }
+    
+    # === PARA STREAMLIT CLOUD ===
     env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
     if env_host:
         return {
@@ -556,7 +573,7 @@ def _get_db_config():
             "use_pure": True,
         }
     
-    # Fallback a secrets.toml local
+    # === PARA DESARROLLO LOCAL ===
     try:
         config = dict(st.secrets["db"])
         config["connection_timeout"] = 30

@@ -9,6 +9,9 @@ import pytz
 import zipfile
 import os
 import json
+import time
+import threading
+import queue
 
 # ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(
@@ -63,8 +66,7 @@ ACTIVIDADES_CARRIER = [
 
 MAX_FOTOS = 100
 
-
-# ==================== CSS PREMIUM ====================
+# ==================== CSS PREMIUM (igual que el original) ====================
 st.markdown(f"""
 <style>
 /* ══ OCULTAR BRANDING STREAMLIT ══ */
@@ -423,24 +425,11 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
 </style>
 """, unsafe_allow_html=True)
 
-
-# ==================== SISTEMA DE ACTUALIZACIÓN EN VIVO ====================
-# ─────────────────────────────────────────────────────────────────────────
-# ARQUITECTURA:
-#   1. El reloj JS actualiza la hora cada segundo (CERO recarga de página).
-#   2. Un polling silencioso via fetch() llama a /_stcore/health cada 25s
-#      para verificar que el servidor sigue vivo. Solo si cambia el estado
-#      de la app (nuevas solicitudes, etc.) se dispara st.rerun() UNA VEZ.
-#   3. Los KPIs del Dashboard se actualizan via DOM injection directa
-#      cuando el servidor responde — SIN recargar la página completa.
-#   4. El indicador LED verde confirma que la conexión está activa.
-# ─────────────────────────────────────────────────────────────────────────
-
-# Viewport + touch fixes para WebView Android
+# ==================== SISTEMA DE ACTUALIZACIÓN EN VIVO (JavaScript) ====================
 st.markdown("""
 <script>
 (function() {
-    // 1. Viewport meta — evita zoom al tocar inputs en Android
+    // Viewport y touch fixes
     var meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
         meta = document.createElement('meta');
@@ -449,7 +438,6 @@ st.markdown("""
     }
     meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
 
-    // 2. Touch polyfill para botones de Streamlit en WebView
     function addTouchClick(el) {
         if (el._ctTouchFixed) return;
         el._ctTouchFixed = true;
@@ -458,7 +446,6 @@ st.markdown("""
             el.click();
         }, { passive: false });
     }
-
     var obs = new MutationObserver(function(mutations) {
         mutations.forEach(function(m) {
             m.addedNodes.forEach(function(node) {
@@ -473,7 +460,6 @@ st.markdown("""
         document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
     }, 800);
 
-    // 3. Prevenir doble-tap zoom
     var lastTap = 0;
     document.addEventListener('touchend', function(e) {
         var now = Date.now();
@@ -482,10 +468,22 @@ st.markdown("""
     }, { passive: false });
 })();
 </script>
-""", unsafe_allow_html=True)
 
-# Sidebar FAB
-st.markdown("""
+<div id="sidebar-fab" onclick="toggleSidebar()" title="Menú" style="display:none">
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <line x1="3" y1="6"  x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+</div>
+
+<div id="live-indicator">
+    <div id="live-dot"></div>
+    <span id="live-label">En vivo</span>
+</div>
+
+<div id="update-toast">🔄 Datos actualizados</div>
+
 <script>
 (function() {
     function clearSidebarStorage() {
@@ -539,117 +537,74 @@ st.markdown("""
     setTimeout(updateFabVisibility, 800);
 })();
 </script>
-
-<div id="sidebar-fab" onclick="toggleSidebar()" title="Menú" style="display:none">
-  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <line x1="3" y1="6"  x2="21" y2="6"/>
-    <line x1="3" y1="12" x2="21" y2="12"/>
-    <line x1="3" y1="18" x2="21" y2="18"/>
-  </svg>
-</div>
-
-<!-- Indicador LED en vivo -->
-<div id="live-indicator">
-    <div id="live-dot"></div>
-    <span id="live-label">En vivo</span>
-</div>
-
-<!-- Toast de actualización -->
-<div id="update-toast">🔄 Datos actualizados</div>
 """, unsafe_allow_html=True)
 
-
-# ==================== BASE DE DATOS ====================
+# ==================== BASE DE DATOS (CORREGIDA Y ROBUSTA) ====================
 def _get_db_config():
-    env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
-    if env_host:
-        return {
-            "host":     env_host,
-            "database": os.environ.get("STREAMLIT_SECRETS_DB_DATABASE"),
-            "user":     os.environ.get("STREAMLIT_SECRETS_DB_USER"),
-            "password": os.environ.get("STREAMLIT_SECRETS_DB_PASSWORD"),
-            "port":     int(os.environ.get("STREAMLIT_SECRETS_DB_PORT", 3306)),
-        }
+    """Obtiene la configuración desde secrets o variables de entorno."""
     try:
-        return dict(st.secrets["db"])
+        # Intenta leer de st.secrets
+        config = dict(st.secrets["db"])
+        # Asegurar parámetros extra
+        config["connection_timeout"] = 15
+        config["autocommit"] = True
+        config["use_pure"] = True
+        return config
     except Exception:
-        return None
+        # Fallback a variables de entorno
+        env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
+        if env_host:
+            return {
+                "host": env_host,
+                "database": os.environ.get("STREAMLIT_SECRETS_DB_DATABASE"),
+                "user": os.environ.get("STREAMLIT_SECRETS_DB_USER"),
+                "password": os.environ.get("STREAMLIT_SECRETS_DB_PASSWORD"),
+                "port": int(os.environ.get("STREAMLIT_SECRETS_DB_PORT", 3306)),
+                "connection_timeout": 15,
+                "autocommit": True,
+                "use_pure": True,
+            }
+    return None
 
-import threading as _threading
-import queue as _queue
-import time as _time
-
-_db_lock        = _threading.RLock()
+_db_lock = threading.RLock()
 _db_conn_holder = [None]
 
-
 def _open_conn():
+    """Crea una nueva conexión con reintentos."""
     config = _get_db_config()
     if not config:
         return None
-    for attempt in range(5):
+    for intento in range(5):
         try:
-            return mysql.connector.connect(
-                **config,
-                autocommit=True,
-                connection_timeout=10,
-            )
-        except Exception:
-            if attempt < 4:
-                _time.sleep(1.0 * (attempt + 1))
-    return None
-
-
-def _direct_read(query, params=()):
-    """Lectura directa sin caché — usada en login.
-    Abre su propia conexión para evitar bloqueos del write-worker."""
-    last_err = None
-    for attempt in range(4):
-        conn = None
-        try:
-            config = _get_db_config()
-            if not config:
-                return None
-            conn = mysql.connector.connect(
-                **config,
-                autocommit=True,
-                connection_timeout=10,
-            )
-            cur = conn.cursor(dictionary=True)
-            cur.execute(query, params)
-            res = cur.fetchall()
-            cur.close()
-            return res
+            conn = mysql.connector.connect(**config)
+            # Verificar que la conexión esté viva
+            conn.ping(reconnect=True, attempts=1, delay=1)
+            return conn
         except Exception as e:
-            last_err = e
-            _time.sleep(0.8 * (attempt + 1))
-        finally:
-            try:
-                if conn and conn.is_connected():
-                    conn.close()
-            except Exception:
-                pass
-    # Devuelve None solo si falló la conexión, lista vacía si no hay registros
+            if intento == 4:
+                # Falló definitivamente
+                return None
+            time.sleep(1.5 ** (intento + 1))  # espera exponencial
     return None
-
 
 def _get_conn():
+    """Obtiene una conexión activa (reutiliza o crea nueva)."""
     with _db_lock:
         conn = _db_conn_holder[0]
         try:
             if conn and conn.is_connected():
+                conn.ping(reconnect=True, attempts=2, delay=1)
                 return conn
         except Exception:
-            pass
+            conn = None
+        # Crear nueva conexión
         conn = _open_conn()
         _db_conn_holder[0] = conn
         return conn
 
-
-# Cola de escrituras en segundo plano
-_wq = _queue.Queue()
-_wq_ready = _threading.Event()
-
+# Cola de escritura en segundo plano
+_wq = queue.Queue()
+_wq_ready = threading.Event()
 
 def _write_worker():
     _wq_ready.set()
@@ -659,10 +614,10 @@ def _write_worker():
             break
         query, params, ev, box = item
         ok = False
-        for attempt in range(4):
+        for _ in range(3):
             conn = _get_conn()
             if conn is None:
-                _time.sleep(1.5 * (attempt + 1))
+                time.sleep(1)
                 continue
             try:
                 with _db_lock:
@@ -672,21 +627,19 @@ def _write_worker():
                 ok = True
                 break
             except Exception:
-                _time.sleep(0.8 * (attempt + 1))
+                time.sleep(0.8)
         box.append(ok)
         if ev:
             ev.set()
         _wq.task_done()
 
-
-_wt = _threading.Thread(target=_write_worker, daemon=True, name="ct_wq")
+_wt = threading.Thread(target=_write_worker, daemon=True, name="ct_writer")
 _wt.start()
 _wq_ready.wait(timeout=3)
 
-
-# TTL más largo = menos reruns involuntarios en WebView
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=45, show_spinner=False)
 def _cached_read(query: str, params: tuple):
+    """Lectura con caché y manejo seguro de conexión."""
     conn = _get_conn()
     if conn is None:
         return []
@@ -700,21 +653,20 @@ def _cached_read(query: str, params: tuple):
     except Exception:
         return []
 
-
 def execute_read(query, params=None):
+    """Ejecuta lectura usando caché."""
     return _cached_read(query, tuple(params) if params else ())
-
 
 def _invalidate_cache():
     _cached_read.clear()
 
-
 def execute_write(query, params=None, wait=True):
-    ev  = _threading.Event() if wait else None
+    """Ejecuta escritura en segundo plano."""
+    ev = threading.Event() if wait else None
     box = []
     _wq.put((query, params, ev, box))
     if wait and ev:
-        ev.wait(timeout=5)
+        ev.wait(timeout=6)
         ok = bool(box and box[0])
     else:
         ok = True
@@ -722,10 +674,8 @@ def execute_write(query, params=None, wait=True):
         _invalidate_cache()
     return ok
 
-
 def get_db_connection():
     return _get_conn()
-
 
 def init_extra_tables():
     queries = [
@@ -759,8 +709,8 @@ def init_extra_tables():
     for q in queries:
         execute_write(q)
 
-init_extra_tables()
-
+# Inicializar tablas (esto es asíncrono, no bloquea el login)
+threading.Thread(target=init_extra_tables, daemon=True).start()
 
 # ==================== ESTADO DE SESIÓN ====================
 defaults = {
@@ -774,16 +724,13 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# Recuperar sesión desde query params
+# Recuperar sesión desde query params o localStorage
 params = st.query_params
 if not st.session_state.login and params.get("u") and params.get("r"):
-    st.session_state["login"] = True
-    st.session_state["user"]  = params["u"]
-    st.session_state["role"]  = params["r"]
+    st.session_state.update({"login": True, "user": params["u"], "role": params["r"]})
 if params.get("m") and st.session_state.get("menu_sel") is None:
     st.session_state["menu_sel"] = params["m"]
 
-# Restaurar sesión desde localStorage si los query_params fueron borrados
 if not st.session_state.login:
     st.markdown("""
     <script>
@@ -807,8 +754,7 @@ if not st.session_state.login:
     </script>
     """, unsafe_allow_html=True)
 
-
-# ==================== LOGIN ====================
+# ==================== LOGIN (CORREGIDO) ====================
 if not st.session_state.login:
     if "_login_u"   not in st.session_state: st.session_state["_login_u"]   = ""
     if "_login_p"   not in st.session_state: st.session_state["_login_p"]   = ""
@@ -833,33 +779,55 @@ if not st.session_state.login:
 
         u_log = st.text_input("Usuario",    key="_login_u", placeholder="Ingresa tu usuario")
         p_log = st.text_input("Contraseña", key="_login_p", type="password",
-                               placeholder="Ingresa tu contraseña")
+                              placeholder="Ingresa tu contraseña")
 
         if st.session_state["_login_err"]:
             st.error(st.session_state["_login_err"])
 
-        # Botón directo sin st.form — compatible con WebView Android
         if st.button("Ingresar al Sistema", use_container_width=True,
                      type="primary", key="_login_btn"):
             st.session_state["_login_err"] = ""
-            # Leer desde session_state (los widgets con key guardan ahí su valor)
             _u = st.session_state.get("_login_u", "").strip()
             _p = st.session_state.get("_login_p", "").strip()
             if not _u or not _p:
                 st.session_state["_login_err"] = "⚠️ Ingresa usuario y contraseña."
                 st.rerun()
             else:
-                with st.spinner("Verificando..."):
-                    user = _direct_read(
+                with st.spinner("Verificando credenciales..."):
+                    # Función directa de lectura con reintentos
+                    def direct_read(query, params):
+                        config = _get_db_config()
+                        if not config:
+                            return None
+                        for intento in range(4):
+                            conn = None
+                            try:
+                                conn = mysql.connector.connect(**config)
+                                cur = conn.cursor(dictionary=True)
+                                cur.execute(query, params)
+                                res = cur.fetchall()
+                                cur.close()
+                                return res if res is not None else []
+                            except Exception:
+                                time.sleep(1.2 ** (intento + 1))
+                            finally:
+                                try:
+                                    if conn and conn.is_connected():
+                                        conn.close()
+                                except:
+                                    pass
+                        return None
+
+                    user = direct_read(
                         "SELECT * FROM users WHERE username=%s AND password=%s",
-                        (_u, _p),
+                        (_u, _p)
                     )
                 if user is None:
                     st.session_state["_login_err"] = (
                         "❌ No se pudo conectar a la base de datos. "
                         "Verifica los secrets de Streamlit o intenta en unos segundos."
                     )
-                    # Limpiar localStorage para evitar loop de sesión fantasma
+                    # Limpiar localStorage
                     st.markdown("""<script>
                     try {
                         localStorage.removeItem('ct_user');
@@ -890,40 +858,15 @@ if not st.session_state.login:
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-
-
-# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
-# ─────────────────────────────────────────────────────────────────────────
-# CÓMO FUNCIONA (sin recargar la página):
-#
-#  ① Reloj JS: setInterval 1s → actualiza #__sb_clock__ y #__hd_clock__
-#     directo en el DOM. Sin rerun de Streamlit.
-#
-#  ② Polling de heartbeat: fetch /_stcore/health cada 25s.
-#     → Si el servidor responde OK, anima el LED verde (señal de vida).
-#     → El LED NUNCA recarga la página — solo parpadea.
-#
-#  ③ Polling de datos: cada 30s hace fetch a la misma URL con ?__ct_poll__=1
-#     El servidor responde 200 (no hace nada especial).
-#     JS compara el conteo de solicitudes embebido en el HTML actual
-#     contra window.__CT_LAST_COUNT__ (guardado en memoria).
-#     Si cambió → muestra el toast "Datos actualizados" + dispara
-#     window.__streamlitRefresh__() que llama al botón oculto de rerun.
-#
-#  ④ El botón oculto "__ct_refresh_trigger__" es el ÚNICO mecanismo
-#     que causa un rerun de Streamlit — y solo cuando hay datos nuevos.
-#     Esto evita el parpadeo de pantalla blanca en WebView Android.
-# ─────────────────────────────────────────────────────────────────────────
+# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO (solo si logueado) ====================
 if st.session_state.get("login"):
-
-    # Conteo actual de solicitudes pendientes (para comparar en el cliente)
+    # Conteo de solicitudes pendientes
     _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
 
     st.markdown(
         f"""
     <script>
     (function () {{
-        // ── Persistencia localStorage ──
         try {{
             var _u = new URLSearchParams(window.location.search).get('u');
             var _r = new URLSearchParams(window.location.search).get('r');
@@ -936,12 +879,9 @@ if st.session_state.get("login"):
         if (window.__CT_ENGINE_STARTED__) return;
         window.__CT_ENGINE_STARTED__ = true;
 
-        // ── Estado inicial del servidor ──
         window.__CT_LAST_COUNT__ = {_sols_count};
 
-        // ════════════════════════════════
-        // ① RELOJ EN TIEMPO REAL (sin rerun)
-        // ════════════════════════════════
+        // Reloj en vivo
         var TZ = 'America/Tijuana';
         function fmtTime(d) {{
             try {{
@@ -975,16 +915,12 @@ if st.session_state.get("login"):
         tickClock();
         setInterval(tickClock, 1000);
 
-        // ════════════════════════════════
-        // ② HEARTBEAT — LED en vivo (sin rerun)
-        // ════════════════════════════════
+        // Heartbeat LED
         var dot = document.getElementById('live-dot');
         function pingHeartbeat() {{
             fetch('/_stcore/health', {{ cache: 'no-store' }})
                 .then(function(r) {{
-                    if (dot) {{
-                        dot.style.background = r.ok ? '#16a34a' : '#dc2626';
-                    }}
+                    if (dot) dot.style.background = r.ok ? '#16a34a' : '#dc2626';
                 }})
                 .catch(function() {{
                     if (dot) dot.style.background = '#dc2626';
@@ -993,9 +929,6 @@ if st.session_state.get("login"):
         setInterval(pingHeartbeat, 25000);
         pingHeartbeat();
 
-        // ════════════════════════════════
-        // ③ POLLING DE DATOS — solo recarga si hay cambio real
-        // ════════════════════════════════
         function showToast(msg) {{
             var toast = document.getElementById('update-toast');
             if (!toast) return;
@@ -1004,7 +937,6 @@ if st.session_state.get("login"):
             setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
         }}
 
-        // Parsea el conteo embebido en el HTML actual
         function getCurrentCount() {{
             var el = document.getElementById('__ct_sol_count__');
             if (!el) return null;
@@ -1012,12 +944,8 @@ if st.session_state.get("login"):
         }}
 
         function triggerSilentRefresh() {{
-            
-
             var btn = document.querySelector('button[title="Actualización silenciosa"]');
-            if (btn) {{
-                btn.click();
-            }}
+            if (btn) btn.click();
         }}
 
         function pollData() {{
@@ -1028,7 +956,6 @@ if st.session_state.get("login"):
                 var delta = current - (window.__CT_LAST_COUNT__ || 0);
                 if (delta > 0) {{
                     showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
-                    // Sonido de notificación
                     try {{
                         var audio = new Audio('{SOUND_URL}');
                         audio.play().catch(function(){{}});
@@ -1039,23 +966,18 @@ if st.session_state.get("login"):
                 triggerSilentRefresh();
             }}
         }}
-
-        // Polling cada 30 segundos
         setInterval(pollData, 30000);
-
     }})();
     </script>
     """,
         unsafe_allow_html=True,
     )
 
-    # Dato embebido en el HTML para que el JS lo compare sin fetch extra
     st.markdown(
         f'<span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>',
         unsafe_allow_html=True,
     )
 
-    # CSS para ocultar visualmente el botón de rerun sin romper el layout
     st.markdown("""
     <style>
     div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"][title="Actualización silenciosa"]) {
@@ -1071,24 +993,19 @@ if st.session_state.get("login"):
     </style>
     """, unsafe_allow_html=True)
 
-    # Botón de rerun silencioso — el JS lo clickea por data-testid, nunca visible
-    if st.button("↺", key="__ct_refresh_trigger__",
-                 help="Actualización silenciosa"):
+    if st.button("↺", key="__ct_refresh_trigger__", help="Actualización silenciosa"):
         _invalidate_cache()
         st.rerun()
-
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
     st.image(LOGO_DATA_URI, width=210)
-
     st.markdown(
         f"<p id='__sb_clock__' style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"
         f"🕒 <b>{hora_actual}</b> &nbsp;·&nbsp; {fecha_hoy}</p>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
-
     role_label = "🛡 Administrador" if st.session_state.role == "admin" else "🔧 Técnico"
     st.markdown(
         f"<p style='margin:0 0 4px;font-size:.95rem;font-weight:700;'>👤 {st.session_state.user}</p>"
@@ -1123,7 +1040,7 @@ with st.sidebar:
         for k in ["login", "user", "role", "last_count"]:
             st.session_state[k] = False if k == "login" else 0 if k == "last_count" else ""
         try:
-            localStorage_clear = """
+            st.markdown("""
             <script>
             try {
                 localStorage.removeItem('ct_user');
@@ -1131,17 +1048,13 @@ with st.sidebar:
                 localStorage.removeItem('ct_menu');
             } catch(e) {}
             </script>
-            """
-            st.markdown(localStorage_clear, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
         except Exception:
             pass
         st.query_params.clear()
         st.rerun()
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== DASHBOARD EJECUTIVO ====================
-# ═══════════════════════════════════════════════════════════════
 if menu == "📊 Dashboard Ejecutivo":
     st.markdown(
         f'<div id="__hd_clock__" class="time-badge">🕒 Tijuana: {hora_actual}</div>'
@@ -1276,10 +1189,7 @@ if menu == "📊 Dashboard Ejecutivo":
             with st.expander(f"📦 Lote: {lote}  ({n} unidades)"):
                 st.table(df_u[df_u["id_lote"] == lote][["unit_number"] + list(CAMPOS_SERIES.keys())])
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== INVENTARIOS ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "📦 Inventarios":
     st.markdown(
         f'<div class="time-badge">🕒 {hora_actual}</div>'
@@ -1442,16 +1352,12 @@ elif menu == "📦 Inventarios":
         else:
             st.info("No hay columnas definidas.")
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== CONTROL DE ASIGNACIONES (Admin) ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Control de Asignaciones":
     st.markdown('<div class="main-header">🎯 Gestión de Órdenes de Trabajo</div>', unsafe_allow_html=True)
 
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
 
-    # Notificación sonora solo cuando el conteo aumentó DESDE el último rerun
     if len(sols) > st.session_state.last_count:
         st.markdown(
             f'<audio autoplay><source src="{SOUND_URL}" type="audio/mp3"></audio>',
@@ -1527,10 +1433,7 @@ elif menu == "🎯 Control de Asignaciones":
             st.success("✅ Orden creada correctamente.")
             st.rerun()
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== MIS TAREAS (Técnico) ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">🎯 Mis Actividades</div>', unsafe_allow_html=True)
 
@@ -1564,7 +1467,7 @@ elif menu == "🎯 Mis Tareas":
                     unsafe_allow_html=True,
                 )
 
-                # ── EVIDENCIA ──
+                # EVIDENCIA
                 if t["actividad_id"].lower() == "evidencia":
                     fotos_prev = execute_read(
                         "SELECT COUNT(*) AS total FROM evidencias WHERE unit_number=%s AND tecnico=%s",
@@ -1648,7 +1551,7 @@ elif menu == "🎯 Mis Tareas":
                             st.success("✅ Evidencia completada.")
                             st.rerun()
 
-                # ── TOMA DE VALORES ──
+                # TOMA DE VALORES
                 elif t["actividad_id"].lower() == "toma de valores":
                     st.markdown(
                         '<div class="tv-field-badge">📊 Registro de Valores del Equipo</div>',
@@ -1725,7 +1628,7 @@ elif menu == "🎯 Mis Tareas":
                                     )
                                     st.rerun()
 
-                # ── TOMA DE SERIES ──
+                # TOMA DE SERIES
                 elif t["actividad_id"].lower() == "toma de series":
                     with st.form(f"ser_{t['id']}"):
                         st.markdown(
@@ -1752,7 +1655,7 @@ elif menu == "🎯 Mis Tareas":
                             )
                             st.rerun()
 
-                # ── ACTIVIDAD GENÉRICA ──
+                # ACTIVIDAD GENÉRICA
                 else:
                     if st.button("✅ Terminar Actividad", key=f"fin_{t['id']}",
                                  use_container_width=True, type="primary"):
@@ -1762,10 +1665,7 @@ elif menu == "🎯 Mis Tareas":
                         )
                         st.rerun()
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== NUEVA SOLICITUD (Técnico) ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "🔔 Nueva Solicitud":
     st.markdown('<div class="main-header">🔔 Solicitar Actividad</div>', unsafe_allow_html=True)
 
@@ -1839,10 +1739,7 @@ elif menu == "🔔 Nueva Solicitud":
     else:
         st.info("Sin solicitudes registradas.")
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== REGISTRO DE UNIDADES (Admin) ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">📸 Registro Maestro de Unidades</div>', unsafe_allow_html=True)
     with st.form("reg_u"):
@@ -1867,10 +1764,7 @@ elif menu == "📸 Registro de Unidades":
             st.success("✅ Registro guardado correctamente")
             st.rerun()
 
-
-# ═══════════════════════════════════════════════════════════════
 # ==================== GESTIÓN DE USUARIOS (Admin) ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "👥 Gestión de Usuarios":
     st.markdown('<div class="main-header">👥 Usuarios del Sistema</div>', unsafe_allow_html=True)
 

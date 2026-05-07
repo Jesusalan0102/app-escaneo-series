@@ -541,34 +541,30 @@ st.markdown("""
 
 # ==================== BASE DE DATOS (CORREGIDA Y ROBUSTA) ====================
 def _get_db_config():
-    """Obtiene la configuración desde secrets o variables de entorno."""
+    """Lee configuración desde variables de entorno de Streamlit Cloud."""
+    # Prioridad: variables STREAMLIT_SECRETS_DB_*
+    env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
+    if env_host:
+        return {
+            "host": env_host,
+            "database": os.environ.get("STREAMLIT_SECRETS_DB_DATABASE"),
+            "user": os.environ.get("STREAMLIT_SECRETS_DB_USER"),
+            "password": os.environ.get("STREAMLIT_SECRETS_DB_PASSWORD"),
+            "port": int(os.environ.get("STREAMLIT_SECRETS_DB_PORT", 3306)),
+            "connection_timeout": 30,
+            "autocommit": True,
+            "use_pure": True,
+        }
+    
+    # Fallback a secrets.toml local
     try:
-        # Intenta leer de st.secrets
         config = dict(st.secrets["db"])
-        # Asegurar parámetros extra
-        config["connection_timeout"] = 15
+        config["connection_timeout"] = 30
         config["autocommit"] = True
         config["use_pure"] = True
         return config
     except Exception:
-        # Fallback a variables de entorno
-        env_host = os.environ.get("STREAMLIT_SECRETS_DB_HOST")
-        if env_host:
-            return {
-                "host": env_host,
-                "database": os.environ.get("STREAMLIT_SECRETS_DB_DATABASE"),
-                "user": os.environ.get("STREAMLIT_SECRETS_DB_USER"),
-                "password": os.environ.get("STREAMLIT_SECRETS_DB_PASSWORD"),
-                "port": int(os.environ.get("STREAMLIT_SECRETS_DB_PORT", 3306)),
-                "connection_timeout": 15,
-                "autocommit": True,
-                "use_pure": True,
-            }
-    return None
-
-_db_lock = threading.RLock()
-_db_conn_holder = [None]
-
+        return None
 def _open_conn():
     """Crea una nueva conexión con reintentos."""
     config = _get_db_config()

@@ -421,6 +421,61 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
     from {{ transform: translateY(10px); opacity: 0; }}
     to   {{ transform: translateY(0);    opacity: 1; }}
 }}
+
+/* ══ ALERTA FLOTANTE DE TICKETS ══ */
+#ticket-alert-fab {{
+    position: fixed; top: 72px; right: 18px;
+    z-index: 99996; display: none;
+    background: linear-gradient(135deg, {CARRIER_DANGER} 0%, #b91c1c 100%);
+    color: white; border-radius: 16px;
+    padding: 14px 18px 14px 16px;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 8px 28px rgba(220,38,38,0.45);
+    cursor: pointer; min-width: 240px; max-width: 320px;
+    border: 1px solid rgba(255,255,255,0.18);
+    backdrop-filter: blur(6px);
+    animation: ticketSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: fixed;
+}}
+#ticket-alert-fab:hover {{
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 12px 36px rgba(220,38,38,0.55);
+}}
+#ticket-alert-fab .taf-header {{
+    display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}}
+#ticket-alert-fab .taf-icon {{ font-size: 1.5rem; line-height: 1; flex-shrink: 0; }}
+#ticket-alert-fab .taf-title {{
+    font-size: 0.82rem; font-weight: 800;
+    letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.9;
+}}
+#ticket-alert-fab .taf-count {{
+    font-size: 2rem; font-weight: 900; line-height: 1;
+    display: block; margin-bottom: 2px;
+}}
+#ticket-alert-fab .taf-sub {{ font-size: 0.76rem; opacity: 0.85; font-weight: 500; }}
+#ticket-alert-fab .taf-close {{
+    position: absolute; top: 8px; right: 10px;
+    font-size: 1rem; opacity: 0.7; cursor: pointer;
+    line-height: 1; padding: 2px 4px; border-radius: 4px;
+    transition: opacity 0.2s; font-weight: 700;
+}}
+#ticket-alert-fab .taf-close:hover {{ opacity: 1; background: rgba(255,255,255,0.15); }}
+#ticket-alert-fab .taf-badge {{
+    display: inline-block; background: rgba(255,255,255,0.22);
+    border-radius: 20px; padding: 2px 10px; font-size: 0.72rem;
+    font-weight: 700; margin-top: 4px; letter-spacing: 0.3px;
+}}
+@keyframes ticketSlideIn {{
+    from {{ transform: translateX(120%); opacity: 0; }}
+    to   {{ transform: translateX(0);    opacity: 1; }}
+}}
+@keyframes ticketPulse {{
+    0%, 100% {{ box-shadow: 0 8px 28px rgba(220,38,38,0.45); }}
+    50%       {{ box-shadow: 0 8px 40px rgba(220,38,38,0.75); }}
+}}
+#ticket-alert-fab.pulsing {{ animation: ticketPulse 1.8s ease-in-out infinite; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -557,6 +612,18 @@ st.markdown("""
 
 <!-- Toast de actualización -->
 <div id="update-toast">🔄 Datos actualizados</div>
+
+<!-- Alerta flotante de tickets no atendidos -->
+<div id="ticket-alert-fab" style="display:none;" onclick="window.__TAF_CLICK__&&window.__TAF_CLICK__()">
+  <span class="taf-close" onclick="event.stopPropagation();window.__TAF_CLOSE__&&window.__TAF_CLOSE__()">✕</span>
+  <div class="taf-header">
+    <span class="taf-icon">🎫</span>
+    <span class="taf-title">Tickets sin atender</span>
+  </div>
+  <span class="taf-count" id="taf-count-num">0</span>
+  <div class="taf-sub">ticket(s) requieren atención inmediata</div>
+  <div class="taf-badge">Toca para ir a Tickets →</div>
+</div>
 """, unsafe_allow_html=True)
 
 
@@ -1054,21 +1121,12 @@ if st.session_state.get("login"):
             return parseInt(el.getAttribute('data-count') || '0', 10);
         }}
 
-        function triggerSilentRefresh() {{
-            
-
-            var btn = document.querySelector('button[title="Actualización silenciosa"]');
-            if (btn) {{
-                btn.click();
-            }}
-        }}
-
         function pollData() {{
             var current = getCurrentCount();
             if (current === null) return;
             if (current !== window.__CT_LAST_COUNT__) {{
+                var delta = current - window.__CT_LAST_COUNT__;
                 window.__CT_LAST_COUNT__ = current;
-                var delta = current - (window.__CT_LAST_COUNT__ || 0);
                 if (delta > 0) {{
                     showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
                     // Sonido de notificación
@@ -1079,9 +1137,58 @@ if st.session_state.get("login"):
                 }} else {{
                     showToast('🔄 Datos actualizados');
                 }}
-                triggerSilentRefresh();
+                // Sin refresh silencioso — solo notificación visual/sonora
             }}
         }}
+
+        // ════════════════════════════════
+        // ④ ALERTA FLOTANTE DE TICKETS
+        // ════════════════════════════════
+        function getTicketCount() {{
+            var el = document.getElementById('__ct_ticket_count__');
+            if (!el) return 0;
+            return parseInt(el.getAttribute('data-count') || '0', 10);
+        }}
+
+        function updateTicketAlert() {{
+            var count = getTicketCount();
+            var fab   = document.getElementById('ticket-alert-fab');
+            var num   = document.getElementById('taf-count-num');
+            if (!fab) return;
+            if (count > 0) {{
+                if (num) num.textContent = count;
+                fab.style.display = 'block';
+                fab.classList.add('pulsing');
+            }} else {{
+                fab.style.display = 'none';
+                fab.classList.remove('pulsing');
+            }}
+        }}
+
+        window.__TAF_CLOSE__ = function() {{
+            var fab = document.getElementById('ticket-alert-fab');
+            if (fab) {{
+                fab.style.animation = 'none';
+                fab.style.transform = 'translateX(120%)';
+                fab.style.opacity = '0';
+                fab.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+                setTimeout(function() {{ fab.style.display = 'none'; }}, 300);
+            }}
+        }};
+
+        window.__TAF_CLICK__ = function() {{
+            var radios = document.querySelectorAll('[data-testid="stRadio"] input[type="radio"]');
+            radios.forEach(function(r) {{
+                var lbl = r.closest('label');
+                if (lbl && lbl.textContent && lbl.textContent.indexOf('Ticket') !== -1) {{
+                    r.click();
+                }}
+            }});
+            window.__TAF_CLOSE__();
+        }};
+
+        setTimeout(updateTicketAlert, 800);
+        setInterval(updateTicketAlert, 30000);
 
         // Polling cada 30 segundos
         setInterval(pollData, 30000);
@@ -1098,27 +1205,15 @@ if st.session_state.get("login"):
         unsafe_allow_html=True,
     )
 
-    # CSS para ocultar visualmente el botón de rerun sin romper el layout
-    st.markdown("""
-    <style>
-    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"][title="Actualización silenciosa"]) {
-        position: fixed !important;
-        bottom: -200px !important;
-        left: -200px !important;
-        width: 1px !important;
-        height: 1px !important;
-        overflow: hidden !important;
-        pointer-events: none !important;
-        opacity: 0 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Conteo de tickets no atendidos — inyectado en el DOM para la alerta flotante
+    _tickets_pendientes = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
+    st.markdown(
+        f'<span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
 
-    # Botón de rerun silencioso — el JS lo clickea por data-testid, nunca visible
-    if st.button("↺", key="__ct_refresh_trigger__",
-                 help="Actualización silenciosa"):
-        _invalidate_cache()
-        st.rerun()
+    # Refresh silencioso eliminado — la app ya no recarga automáticamente.
+    # El LED verde sigue pulsando vía heartbeat, sin causar reruns.
 
 
 # ==================== SIDEBAR ====================

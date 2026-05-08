@@ -1025,7 +1025,6 @@ components.html(
     </body></html>
     """,
     height=0,
-    key="__ct_live_engine__",
 )
 
 
@@ -1054,7 +1053,6 @@ def _live_counts_fragment():
         </script>
         """,
         height=0,
-        key=f"__ct_counts_{_sols}_{_tickets}__",
     )
 
 if st.session_state.get("login"):

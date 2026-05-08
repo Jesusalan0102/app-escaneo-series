@@ -1143,6 +1143,7 @@ with st.sidebar:
     _ADMIN_OPTS = [
         "📊 Dashboard Ejecutivo",
         "🎯 Control de Asignaciones",
+        "🎫 Tickets",
         "📦 Inventarios",
         "📸 Registro de Unidades",
         "👥 Gestión de Usuarios",
@@ -1569,6 +1570,111 @@ elif menu == "🎯 Control de Asignaciones":
             )
             st.success("✅ Orden creada correctamente.")
             st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════
+# ==================== TICKETS (Admin) ====================
+# ═══════════════════════════════════════════════════════════════
+elif menu == "🎫 Tickets":
+    st.markdown('<div class="main-header">🎫 Gestión de Tickets</div>', unsafe_allow_html=True)
+
+    def get_next_ticket_num():
+        res = execute_read("SELECT MAX(ticket_num) as max_num FROM tickets")
+        if res and res[0]["max_num"]:
+            return res[0]["max_num"] + 1
+        return 1
+
+    tab1, tab2 = st.tabs(["📋 Lista de Tickets", "➕ Nuevo Ticket"])
+
+    with tab1:
+        tickets_list = execute_read(
+            "SELECT t.*, a.tecnico as tecnico_asig FROM tickets t "
+            "LEFT JOIN asignaciones a ON t.id = a.ticket_id "
+            "ORDER BY t.ticket_num DESC"
+        )
+        if tickets_list:
+            for t in tickets_list:
+                if not t["atendido"]:
+                    estado_tick = "🔴 No atendido"
+                    color_tick  = CARRIER_DANGER
+                elif t["atendido"] and not t["reporte_enviado"]:
+                    estado_tick = "🟡 Atendido (sin reporte)"
+                    color_tick  = CARRIER_WARN
+                else:
+                    estado_tick = "🟢 Completado"
+                    color_tick  = CARRIER_SUCCESS
+
+                st.markdown(
+                    f"<div style='border-left:6px solid {color_tick};padding:14px 18px;"
+                    f"margin-bottom:12px;background:white;border-radius:0 12px 12px 0;"
+                    f"box-shadow:0 2px 10px rgba(0,43,91,0.07);'>",
+                    unsafe_allow_html=True,
+                )
+                col1, col2 = st.columns([1, 3])
+                col1.markdown(
+                    f"<div style='font-size:2rem;font-weight:800;color:{CARRIER_BLUE};'>#{t['ticket_num']}</div>"
+                    f"<div style='font-size:0.8rem;font-weight:600;color:{color_tick};'>{estado_tick}</div>",
+                    unsafe_allow_html=True,
+                )
+                col2.markdown(f"**Unidad:** {t['unit_number']} &nbsp;|&nbsp; **VIN:** {t.get('vin_number') or 'N/D'}")
+                col2.markdown(f"**Descripción:** {t['descripcion']}")
+                col2.markdown(
+                    f"<span style='font-size:.82rem;color:#6b7280;'>Creado por: {t['creado_por']} · {t['fecha_creacion']}</span>",
+                    unsafe_allow_html=True,
+                )
+                if t.get("tecnico_asig"):
+                    col2.markdown(f"**Asignado a:** {t['tecnico_asig']}")
+                if t["atendido"] and not t["reporte_enviado"]:
+                    if st.button("📤 Marcar reporte enviado", key=f"rep_{t['id']}", use_container_width=True):
+                        execute_write(
+                            "UPDATE tickets SET reporte_enviado=TRUE, fecha_reporte=%s WHERE id=%s",
+                            (datetime.now(tijuana_tz), t["id"]),
+                        )
+                        st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("📋 No hay tickets registrados aún.")
+
+    with tab2:
+        unidades_tk = execute_read("SELECT unit_number, vin_number FROM unidades")
+        tecnicos_tk = execute_read("SELECT username FROM users WHERE role='tecnico'")
+        with st.form("new_ticket_form"):
+            opciones_tk = {
+                f"{u['unit_number']} — VIN: {u.get('vin_number') or 'sin VIN'}": u["unit_number"]
+                for u in unidades_tk
+            }
+            unidad_label_tk = st.selectbox("Unidad", list(opciones_tk.keys()) if opciones_tk else ["(sin unidades)"])
+            unidad_sel_tk   = opciones_tk.get(unidad_label_tk, "")
+            vin_auto_tk     = next(
+                (u["vin_number"] for u in unidades_tk if u["unit_number"] == unidad_sel_tk), ""
+            ) or ""
+            vin_tk   = st.text_input("VIN", value=vin_auto_tk)
+            desc_tk  = st.text_area("Descripción del problema")
+            tec_tk   = st.selectbox(
+                "Asignar a técnico",
+                [t["username"] for t in tecnicos_tk] if tecnicos_tk else ["(sin técnicos)"],
+            )
+            if st.form_submit_button("🎫 Crear Ticket", use_container_width=True, type="primary"):
+                if unidad_sel_tk and desc_tk and tec_tk:
+                    num_tk = get_next_ticket_num()
+                    execute_write(
+                        "INSERT INTO tickets (ticket_num, unit_number, vin_number, descripcion, creado_por) "
+                        "VALUES (%s,%s,%s,%s,%s)",
+                        (num_tk, unidad_sel_tk, vin_tk, desc_tk, st.session_state.user),
+                    )
+                    ticket_id_res = execute_read(
+                        "SELECT id FROM tickets WHERE ticket_num=%s", (num_tk,)
+                    )
+                    if ticket_id_res:
+                        execute_write(
+                            "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, ticket_id) "
+                            "VALUES (%s,%s,%s,'pendiente',%s)",
+                            (unidad_sel_tk, f"Ticket #{num_tk}", tec_tk, ticket_id_res[0]["id"]),
+                        )
+                    st.success(f"✅ Ticket #{num_tk} creado y asignado a {tec_tk}.")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Completa todos los campos.")
 
 
 # ═══════════════════════════════════════════════════════════════

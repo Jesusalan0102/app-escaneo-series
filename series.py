@@ -8,11 +8,6 @@ import io
 import pytz
 import zipfile
 import os
-import time
-import threading
-import queue
-import base64 as _b64
-import pathlib as _pl
 
 # ==================== CONFIGURACIÓN INICIAL ====================
 st.set_page_config(
@@ -35,14 +30,6 @@ CARRIER_WARN    = "#d97706"
 CARRIER_DANGER  = "#dc2626"
 
 LOGO_URL = "https://raw.githubusercontent.com/Jesusalan0102/app-escaneo-series/main/carrierlogo.jpg"
-_logo_path = _pl.Path(__file__).parent / "carrierlogo.jpg"
-if _logo_path.exists():
-    _logo_b64 = _b64.b64encode(_logo_path.read_bytes()).decode()
-    LOGO_DATA_URI = f"data:image/jpeg;base64,{_logo_b64}"
-else:
-    LOGO_DATA_URI = LOGO_URL
-
-SOUND_URL = "https://raw.githubusercontent.com/rafaelEscalante/notification-sounds/master/pings/ping-8.mp3"
 
 CAMPOS_SERIES = {
     "vin_number":              "VIN Number",
@@ -65,14 +52,13 @@ ACTIVIDADES_CARRIER = [
 
 MAX_FOTOS = 100
 
-# ==================== CSS PREMIUM (COMPLETO) ====================
+# ==================== CSS PREMIUM ====================
 st.markdown(f"""
 <style>
 header[data-testid="stHeader"] {{ display: none !important; }}
 footer {{ display: none !important; }}
 #MainMenu {{ display: none !important; }}
 .stDeployButton {{ display: none !important; }}
-[data-testid="stToolbar"] {{ display: none !important; }}
 .block-container {{ padding-top: 1.5rem !important; }}
 section[data-testid="stSidebar"] {{ width: 21rem !important; }}
 .main-header {{ font-size: 1.75rem; font-weight: 800; color: {CARRIER_BLUE}; border-bottom: 3px solid {CARRIER_ACCENT}; padding-bottom: 12px; margin-bottom: 24px; }}
@@ -91,7 +77,7 @@ section[data-testid="stSidebar"] {{ width: 21rem !important; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== CONEXIÓN DIRECTA A TIDB CLOUD (HARDCODEADA) ====================
+# ==================== CONEXIÓN DIRECTA A TIDB ====================
 DB_CONFIG = {
     "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
     "port": 4000,
@@ -108,7 +94,7 @@ def get_db_connection():
         conn = mysql.connector.connect(**DB_CONFIG)
         return conn
     except Exception as e:
-        st.error(f"❌ Error de conexión a la base de datos: {e}")
+        st.error(f"❌ Error de conexión: {e}")
         return None
 
 def execute_query(query, params=None, fetch=True):
@@ -129,6 +115,11 @@ def execute_query(query, params=None, fetch=True):
         st.error(f"Error en consulta: {e}")
         return [] if fetch else False
 
+# ==================== DIAGNÓSTICO INICIAL (OPCIONAL) ====================
+# Puedes activar esto para ver los usuarios
+# usuarios = execute_query("SELECT * FROM users")
+# st.write(usuarios)
+
 # ==================== ESTADO DE SESIÓN ====================
 if "login" not in st.session_state:
     st.session_state.login = False
@@ -139,37 +130,48 @@ if "role" not in st.session_state:
 if "menu_sel" not in st.session_state:
     st.session_state.menu_sel = None
 
-# ==================== LOGIN ====================
+# ==================== LOGIN CON DIAGNÓSTICO ====================
 if not st.session_state.login:
-    st.markdown(f'<div style="text-align:center;padding:30px;"><img src="{LOGO_DATA_URI}" width="340"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align:center;padding:30px;"><img src="{LOGO_URL}" width="300"></div>', unsafe_allow_html=True)
     _, col_c, _ = st.columns([1,2,1])
     with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.markdown("<h3 style='text-align:center;color:#002B5B;'>Carrier Transicold</h3>", unsafe_allow_html=True)
         username = st.text_input("Usuario", key="login_user")
         password = st.text_input("Contraseña", type="password", key="login_pass")
+        
+        # Botón de diagnóstico (opcional)
+        if st.checkbox("Mostrar diagnóstico"):
+            total = execute_query("SELECT COUNT(*) as total FROM users")
+            st.write(f"Total usuarios en BD: {total[0]['total'] if total else 0}")
+            all_users = execute_query("SELECT username, password, LENGTH(password) as len_pass FROM users")
+            st.write(all_users)
+        
         if st.button("Ingresar", use_container_width=True, type="primary"):
             if username and password:
                 with st.spinner("Verificando..."):
-                    # Verificar si la tabla users existe; si no, crearla e insertar admin
-                    try:
-                        # Intentar obtener el usuario
-                        user = execute_query("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                        user = []
+                    # Limpiar espacios
+                    u_clean = username.strip()
+                    p_clean = password.strip()
+                    
+                    # Consulta directa
+                    query = "SELECT * FROM users WHERE username = %s AND password = %s"
+                    user = execute_query(query, (u_clean, p_clean))
+                    
+                    # Si no funciona, probar con LOWER y TRIM
+                    if not user:
+                        query2 = "SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(%s)) AND BINARY password = BINARY %s"
+                        user = execute_query(query2, (u_clean, p_clean))
+                    
                     if user:
                         st.session_state.login = True
                         st.session_state.user = user[0]["username"]
                         st.session_state.role = user[0]["role"].lower()
                         st.rerun()
                     else:
-                        # Mostrar mensaje de depuración: cuántos usuarios hay en la tabla
-                        total_users = execute_query("SELECT COUNT(*) as total FROM users")
-                        if total_users:
-                            st.error(f"❌ Credenciales incorrectas. La tabla tiene {total_users[0]['total']} usuarios registrados.")
-                        else:
-                            st.error("❌ Credenciales incorrectas. Además, no se pudo leer la tabla users.")
+                        # Mensaje detallado
+                        st.error(f"❌ Credenciales incorrectas para '{u_clean}'. La tabla tiene {execute_query('SELECT COUNT(*) as total FROM users')[0]['total']} usuarios.")
+                        st.info("Verifica mayúsculas, minúsculas y espacios. Si el problema persiste, usa el diagnóstico para revisar las contraseñas almacenadas.")
             else:
                 st.warning("Ingresa usuario y contraseña")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -177,7 +179,7 @@ if not st.session_state.login:
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
-    st.image(LOGO_DATA_URI, width=200)
+    st.image(LOGO_URL, width=200)
     st.markdown(f"<p style='margin-top:10px'><b>👤 {st.session_state.user}</b><br><span style='font-size:0.8rem'>{'🛡 Administrador' if st.session_state.role == 'admin' else '🔧 Técnico'}</span></p>", unsafe_allow_html=True)
     st.markdown("---")
     if st.session_state.role == "admin":
@@ -408,7 +410,6 @@ elif menu == "🎫 Tickets":
             tecnico_asignado = st.selectbox("Asignar a técnico", [t["username"] for t in tecnicos] if tecnicos else [])
             if st.form_submit_button("📌 Crear ticket", type="primary"):
                 if unidad_seleccionada and descripcion and tecnico_asignado:
-                    # Obtener siguiente número
                     max_num = execute_query("SELECT MAX(ticket_num) as max_num FROM tickets")
                     next_num = (max_num[0]["max_num"] or 0) + 1 if max_num else 1
                     execute_query("INSERT INTO tickets (ticket_num, unit_number, vin_number, descripcion, creado_por) VALUES (%s,%s,%s,%s,%s)", (next_num, unidad_seleccionada, vin, descripcion, st.session_state.user), fetch=False)

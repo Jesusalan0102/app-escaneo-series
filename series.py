@@ -95,7 +95,7 @@ DB_CONFIG = {
     "database": "carrier_db",
     "connect_timeout": 30,
     "autocommit": True,
-    "ssl": True,
+    "ssl": {"ca": None},
     "cursorclass": pymysql.cursors.DictCursor,
 }
 

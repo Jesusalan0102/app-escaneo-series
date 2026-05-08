@@ -481,18 +481,6 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
 
 
 # ==================== SISTEMA DE ACTUALIZACIÓN EN VIVO ====================
-# ─────────────────────────────────────────────────────────────────────────
-# ARQUITECTURA:
-#   1. El reloj JS actualiza la hora cada segundo (CERO recarga de página).
-#   2. Un polling silencioso via fetch() llama a /_stcore/health cada 25s
-#      para verificar que el servidor sigue vivo. Solo si cambia el estado
-#      de la app (nuevas solicitudes, etc.) se dispara st.rerun() UNA VEZ.
-#   3. Los KPIs del Dashboard se actualizan via DOM injection directa
-#      cuando el servidor responde — SIN recargar la página completa.
-#   4. El indicador LED verde confirma que la conexión está activa.
-# ─────────────────────────────────────────────────────────────────────────
-
-# Viewport + touch fixes para WebView Android
 st.markdown("""
 <script>
 (function() {
@@ -540,7 +528,7 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# Sidebar FAB
+# Sidebar FAB + Indicadores en vivo
 st.markdown("""
 <script>
 (function() {
@@ -948,11 +936,9 @@ if not st.session_state.login:
         if st.session_state["_login_err"]:
             st.error(st.session_state["_login_err"])
 
-        # Botón directo sin st.form — compatible con WebView Android
         if st.button("Ingresar al Sistema", use_container_width=True,
                      type="primary", key="_login_btn"):
             st.session_state["_login_err"] = ""
-            # Leer desde session_state (los widgets con key guardan ahí su valor)
             _u = st.session_state.get("_login_u", "").strip()
             _p = st.session_state.get("_login_p", "").strip()
             if not _u or not _p:
@@ -969,14 +955,6 @@ if not st.session_state.login:
                         "❌ No se pudo conectar a la base de datos. "
                         "Verifica los secrets de Streamlit o intenta en unos segundos."
                     )
-                    # Limpiar localStorage para evitar loop de sesión fantasma
-                    st.markdown("""<script>
-                    try {
-                        localStorage.removeItem('ct_user');
-                        localStorage.removeItem('ct_role');
-                        localStorage.removeItem('ct_menu');
-                    } catch(e){}
-                    </script>""", unsafe_allow_html=True)
                     st.rerun()
                 elif len(user) == 0:
                     st.session_state["_login_err"] = "❌ Credenciales incorrectas. Intenta de nuevo."
@@ -1001,39 +979,15 @@ if not st.session_state.login:
     st.stop()
 
 
-
 # ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
-# ─────────────────────────────────────────────────────────────────────────
-# CÓMO FUNCIONA (sin recargar la página):
-#
-#  ① Reloj JS: setInterval 1s → actualiza #__sb_clock__ y #__hd_clock__
-#     directo en el DOM. Sin rerun de Streamlit.
-#
-#  ② Polling de heartbeat: fetch /_stcore/health cada 25s.
-#     → Si el servidor responde OK, anima el LED verde (señal de vida).
-#     → El LED NUNCA recarga la página — solo parpadea.
-#
-#  ③ Polling de datos: cada 30s hace fetch a la misma URL con ?__ct_poll__=1
-#     El servidor responde 200 (no hace nada especial).
-#     JS compara el conteo de solicitudes embebido en el HTML actual
-#     contra window.__CT_LAST_COUNT__ (guardado en memoria).
-#     Si cambió → muestra el toast "Datos actualizados" + dispara
-#     window.__streamlitRefresh__() que llama al botón oculto de rerun.
-#
-#  ④ El botón oculto "__ct_refresh_trigger__" es el ÚNICO mecanismo
-#     que causa un rerun de Streamlit — y solo cuando hay datos nuevos.
-#     Esto evita el parpadeo de pantalla blanca en WebView Android.
-# ─────────────────────────────────────────────────────────────────────────
 if st.session_state.get("login"):
 
-    # Conteo actual de solicitudes pendientes (para comparar en el cliente)
     _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
 
     st.markdown(
         f"""
     <script>
     (function () {{
-        // ── Persistencia localStorage ──
         try {{
             var _u = new URLSearchParams(window.location.search).get('u');
             var _r = new URLSearchParams(window.location.search).get('r');
@@ -1046,12 +1000,8 @@ if st.session_state.get("login"):
         if (window.__CT_ENGINE_STARTED__) return;
         window.__CT_ENGINE_STARTED__ = true;
 
-        // ── Estado inicial del servidor ──
         window.__CT_LAST_COUNT__ = {_sols_count};
 
-        // ════════════════════════════════
-        // ① RELOJ EN TIEMPO REAL (sin rerun)
-        // ════════════════════════════════
         var TZ = 'America/Tijuana';
         function fmtTime(d) {{
             try {{
@@ -1085,9 +1035,6 @@ if st.session_state.get("login"):
         tickClock();
         setInterval(tickClock, 1000);
 
-        // ════════════════════════════════
-        // ② HEARTBEAT — LED en vivo (sin rerun)
-        // ════════════════════════════════
         var dot = document.getElementById('live-dot');
         function pingHeartbeat() {{
             fetch('/_stcore/health', {{ cache: 'no-store' }})
@@ -1103,9 +1050,6 @@ if st.session_state.get("login"):
         setInterval(pingHeartbeat, 25000);
         pingHeartbeat();
 
-        // ════════════════════════════════
-        // ③ POLLING DE DATOS — solo recarga si hay cambio real
-        // ════════════════════════════════
         function showToast(msg) {{
             var toast = document.getElementById('update-toast');
             if (!toast) return;
@@ -1114,7 +1058,6 @@ if st.session_state.get("login"):
             setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
         }}
 
-        // Parsea el conteo embebido en el HTML actual
         function getCurrentCount() {{
             var el = document.getElementById('__ct_sol_count__');
             if (!el) return null;
@@ -1129,7 +1072,6 @@ if st.session_state.get("login"):
                 window.__CT_LAST_COUNT__ = current;
                 if (delta > 0) {{
                     showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
-                    // Sonido de notificación
                     try {{
                         var audio = new Audio('{SOUND_URL}');
                         audio.play().catch(function(){{}});
@@ -1137,13 +1079,9 @@ if st.session_state.get("login"):
                 }} else {{
                     showToast('🔄 Datos actualizados');
                 }}
-                // Sin refresh silencioso — solo notificación visual/sonora
             }}
         }}
 
-        // ════════════════════════════════
-        // ④ ALERTA FLOTANTE DE TICKETS
-        // ════════════════════════════════
         function getTicketCount() {{
             var el = document.getElementById('__ct_ticket_count__');
             if (!el) return 0;
@@ -1190,7 +1128,6 @@ if st.session_state.get("login"):
         setTimeout(updateTicketAlert, 800);
         setInterval(updateTicketAlert, 30000);
 
-        // Polling cada 30 segundos
         setInterval(pollData, 30000);
 
     }})();
@@ -1199,21 +1136,16 @@ if st.session_state.get("login"):
         unsafe_allow_html=True,
     )
 
-    # Dato embebido en el HTML para que el JS lo compare sin fetch extra
     st.markdown(
         f'<span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>',
         unsafe_allow_html=True,
     )
 
-    # Conteo de tickets no atendidos — inyectado en el DOM para la alerta flotante
     _tickets_pendientes = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
     st.markdown(
         f'<span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>',
         unsafe_allow_html=True,
     )
-
-    # Refresh silencioso eliminado — la app ya no recarga automáticamente.
-    # El LED verde sigue pulsando vía heartbeat, sin causar reruns.
 
 
 # ==================== SIDEBAR ====================
@@ -1243,7 +1175,7 @@ with st.sidebar:
         "📸 Registro de Unidades",
         "👥 Gestión de Usuarios",
     ]
-    _TECH_OPTS = ["🎯 Mis Tareas", "🔔 Nueva Solicitud"]
+    _TECH_OPTS = ["🎯 Mis Tareas", "🔔 Nueva Solicitud", "🎫 Mis Tickets"]
     _opts  = _ADMIN_OPTS if st.session_state.role == "admin" else _TECH_OPTS
     _label = "MENÚ PRINCIPAL" if st.session_state.role == "admin" else "ÁREA DE TRABAJO"
     _saved = st.session_state.get("menu_sel")
@@ -1590,7 +1522,6 @@ elif menu == "🎯 Control de Asignaciones":
 
     sols = execute_read("SELECT * FROM asignaciones WHERE estado='solicitado'")
 
-    # Notificación sonora solo cuando el conteo aumentó DESDE el último rerun
     if len(sols) > st.session_state.last_count:
         st.markdown(
             f'<audio autoplay><source src="{SOUND_URL}" type="audio/mp3"></audio>',
@@ -1734,32 +1665,34 @@ elif menu == "🎫 Tickets":
         unidades_tk = execute_read("SELECT unit_number, vin_number FROM unidades")
         tecnicos_tk = execute_read("SELECT username FROM users WHERE role='tecnico'")
         with st.form("new_ticket_form"):
-            opciones_tk = {
-                f"{u['unit_number']} — VIN: {u.get('vin_number') or 'sin VIN'}": u["unit_number"]
-                for u in unidades_tk
-            }
-            unidad_label_tk = st.selectbox("Unidad", list(opciones_tk.keys()) if opciones_tk else ["(sin unidades)"])
-            unidad_sel_tk   = opciones_tk.get(unidad_label_tk, "")
-            vin_auto_tk     = next(
-                (u["vin_number"] for u in unidades_tk if u["unit_number"] == unidad_sel_tk), ""
-            ) or ""
-            vin_tk   = st.text_input("VIN", value=vin_auto_tk)
-            desc_tk  = st.text_area("Descripción del problema")
-            tec_tk   = st.selectbox(
-                "Asignar a técnico",
-                [t["username"] for t in tecnicos_tk] if tecnicos_tk else ["(sin técnicos)"],
-            )
+            opciones_tk = {"-- Selecciona unidad --": None}
+            for u in unidades_tk:
+                label = f"{u['unit_number']} — VIN: {u.get('vin_number') or 'sin VIN'}"
+                opciones_tk[label] = u["unit_number"]
+            unidad_label_tk = st.selectbox("Unidad", list(opciones_tk.keys()), index=0)
+            unidad_sel_tk = opciones_tk.get(unidad_label_tk)
+
+            vin_auto_tk = ""
+            if unidad_sel_tk:
+                vin_auto_tk = next((u["vin_number"] for u in unidades_tk if u["unit_number"] == unidad_sel_tk), "") or ""
+            vin_tk = st.text_input("VIN", value=vin_auto_tk)
+            desc_tk = st.text_area("Descripción del problema")
+            tec_tk = st.selectbox("Asignar a técnico", [t["username"] for t in tecnicos_tk] if tecnicos_tk else ["(sin técnicos)"])
             if st.form_submit_button("🎫 Crear Ticket", use_container_width=True, type="primary"):
-                if unidad_sel_tk and desc_tk and tec_tk:
+                if not unidad_sel_tk:
+                    st.warning("⚠️ Selecciona una unidad válida.")
+                elif not desc_tk:
+                    st.warning("⚠️ Escribe una descripción del problema.")
+                elif tec_tk == "(sin técnicos)":
+                    st.warning("⚠️ Selecciona un técnico.")
+                else:
                     num_tk = get_next_ticket_num()
                     execute_write(
                         "INSERT INTO tickets (ticket_num, unit_number, vin_number, descripcion, creado_por) "
                         "VALUES (%s,%s,%s,%s,%s)",
                         (num_tk, unidad_sel_tk, vin_tk, desc_tk, st.session_state.user),
                     )
-                    ticket_id_res = execute_read(
-                        "SELECT id FROM tickets WHERE ticket_num=%s", (num_tk,)
-                    )
+                    ticket_id_res = execute_read("SELECT id FROM tickets WHERE ticket_num=%s", (num_tk,))
                     if ticket_id_res:
                         execute_write(
                             "INSERT INTO asignaciones (unidad, actividad_id, tecnico, estado, ticket_id) "
@@ -1767,9 +1700,8 @@ elif menu == "🎫 Tickets":
                             (unidad_sel_tk, f"Ticket #{num_tk}", tec_tk, ticket_id_res[0]["id"]),
                         )
                     st.success(f"✅ Ticket #{num_tk} creado y asignado a {tec_tk}.")
+                    _invalidate_cache()
                     st.rerun()
-                else:
-                    st.warning("⚠️ Completa todos los campos.")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1889,7 +1821,13 @@ elif menu == "🎯 Mis Tareas":
                                 "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
                                 (datetime.now(tijuana_tz), t["id"]),
                             )
+                            if t.get("ticket_id"):
+                                execute_write(
+                                    "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
+                                    (datetime.now(tijuana_tz), t["ticket_id"]),
+                                )
                             st.success("✅ Evidencia completada.")
+                            _invalidate_cache()
                             st.rerun()
 
                 # ── TOMA DE VALORES ──
@@ -1940,7 +1878,13 @@ elif menu == "🎯 Mis Tareas":
                                     "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
                                     (datetime.now(tijuana_tz), t["id"]),
                                 )
-                                st.success("✅ Valores guardados y tarea completada.")
+                                if t.get("ticket_id"):
+                                    execute_write(
+                                        "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
+                                        (datetime.now(tijuana_tz), t["ticket_id"]),
+                                    )
+                                st.success("✅ Valores guardados y actividad completada.")
+                                _invalidate_cache()
                                 st.rerun()
 
                     with st.expander("⚙️ Configurar campos de Toma de Valores"):
@@ -1994,6 +1938,13 @@ elif menu == "🎯 Mis Tareas":
                                 "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
                                 (datetime.now(tijuana_tz), t["id"]),
                             )
+                            if t.get("ticket_id"):
+                                execute_write(
+                                    "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
+                                    (datetime.now(tijuana_tz), t["ticket_id"]),
+                                )
+                            st.success("✅ Series guardadas y actividad completada.")
+                            _invalidate_cache()
                             st.rerun()
 
                 # ── ACTIVIDAD GENÉRICA ──
@@ -2004,6 +1955,13 @@ elif menu == "🎯 Mis Tareas":
                             "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
                             (datetime.now(tijuana_tz), t["id"]),
                         )
+                        if t.get("ticket_id"):
+                            execute_write(
+                                "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
+                                (datetime.now(tijuana_tz), t["ticket_id"]),
+                            )
+                        st.success("✅ Actividad finalizada.")
+                        _invalidate_cache()
                         st.rerun()
 
 
@@ -2082,6 +2040,74 @@ elif menu == "🔔 Nueva Solicitud":
             )
     else:
         st.info("Sin solicitudes registradas.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# ==================== MIS TICKETS (Técnico) ====================
+# ═══════════════════════════════════════════════════════════════
+elif menu == "🎫 Mis Tickets":
+    st.markdown('<div class="main-header">🎫 Mis Tickets</div>', unsafe_allow_html=True)
+
+    mis_tickets = execute_read(
+        "SELECT t.*, a.tecnico as tecnico_asig FROM tickets t "
+        "JOIN asignaciones a ON t.id = a.ticket_id "
+        "WHERE a.tecnico = %s "
+        "ORDER BY t.ticket_num DESC",
+        (st.session_state.user,)
+    )
+
+    if not mis_tickets:
+        st.info("🎫 No tienes tickets asignados.")
+    else:
+        for t in mis_tickets:
+            if not t["atendido"]:
+                estado_tick = "🔴 No atendido"
+                color_tick  = CARRIER_DANGER
+            elif t["atendido"] and not t["reporte_enviado"]:
+                estado_tick = "🟠 Atendido (sin reporte)"
+                color_tick  = CARRIER_WARN
+            else:
+                estado_tick = "🟢 Completado"
+                color_tick  = CARRIER_SUCCESS
+
+            with st.container():
+                st.markdown(
+                    f"<div style='border-left:6px solid {color_tick};padding:14px 18px;"
+                    f"margin-bottom:12px;background:white;border-radius:0 12px 12px 0;"
+                    f"box-shadow:0 2px 10px rgba(0,43,91,0.07);'>",
+                    unsafe_allow_html=True,
+                )
+                col_1, col_2 = st.columns([1, 3])
+                col_1.markdown(
+                    f"<div style='font-size:2rem;font-weight:800;color:{CARRIER_BLUE};'>#{t['ticket_num']}</div>"
+                    f"<div style='font-size:0.8rem;font-weight:600;color:{color_tick};'>{estado_tick}</div>",
+                    unsafe_allow_html=True,
+                )
+                col_2.markdown(f"**Unidad:** {t['unit_number']} &nbsp;|&nbsp; **VIN:** {t.get('vin_number') or 'N/D'}")
+                col_2.markdown(f"**Descripción:** {t['descripcion']}")
+                col_2.markdown(
+                    f"<span style='font-size:.82rem;color:#6b7280;'>"
+                    f"Creado: {t['fecha_creacion']} &nbsp;|&nbsp; "
+                    f"Atendido: {t.get('fecha_atencion') or '—'}</span>",
+                    unsafe_allow_html=True,
+                )
+
+                if t["atendido"] and not t["reporte_enviado"]:
+                    with st.form(f"enviar_reporte_tecnico_{t['id']}"):
+                        reporte_txt = st.text_area("Escribe el reporte de resolución", key=f"rep_{t['id']}")
+                        if st.form_submit_button("📤 Enviar reporte", use_container_width=True, type="primary"):
+                            if not reporte_txt.strip():
+                                st.error("⚠️ Debes escribir un reporte.")
+                            else:
+                                execute_write(
+                                    "UPDATE tickets SET reporte_enviado=TRUE, fecha_reporte=%s WHERE id=%s",
+                                    (datetime.now(tijuana_tz), t["id"]),
+                                )
+                                st.success("✅ Reporte enviado. Ticket completado (verde).")
+                                _invalidate_cache()
+                                st.rerun()
+
+                st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════

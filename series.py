@@ -528,7 +528,7 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# Sidebar FAB + Indicadores en vivo
+# Sidebar FAB + Indicadores
 st.markdown("""
 <script>
 (function() {
@@ -980,7 +980,6 @@ if not st.session_state.login:
 
 
 # ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
-# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
 if st.session_state.get("login"):
 
     _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
@@ -1040,11 +1039,10 @@ if st.session_state.get("login"):
             }}
         }}
 
-        // Reloj inmediato e intervalo cada segundo
         updateClocks();
         var clockInterval = setInterval(updateClocks, 1000);
 
-        // Observador: si Streamlit recrea los elementos, los actualizamos de inmediato
+        // MutationObserver: si Streamlit recrea los elementos, los actualizamos de inmediato
         var observer = new MutationObserver(function(mutations) {{
             var now = new Date();
             var t = fmtTime(now);
@@ -1062,14 +1060,12 @@ if st.session_state.get("login"):
         }});
         observer.observe(document.body, {{ childList: true, subtree: true }});
 
-        // Reanimación: si por alguna razón el intervalo se detiene, lo reintentamos
+        // Supervisor de vida: si el reloj se congela, lo reanimamos
         var lastClockCheck = Date.now();
         setInterval(function() {{
             var now = Date.now();
-            // Si han pasado más de 3 segundos desde el último tick, forzamos reinicio suave
             if (now - lastClockCheck > 3000) {{
                 updateClocks();
-                // No detenemos el intervalo original, solo damos un empujón
             }}
             lastClockCheck = now;
         }}, 5000);
@@ -1090,7 +1086,6 @@ if st.session_state.get("login"):
         setInterval(pingHeartbeat, 25000);
         pingHeartbeat();
 
-        // Toast y polling de datos
         function showToast(msg) {{
             var toast = document.getElementById('update-toast');
             if (!toast) return;
@@ -1123,7 +1118,6 @@ if st.session_state.get("login"):
             }}
         }}
 
-        // Alerta de tickets
         function getTicketCount() {{
             var el = document.getElementById('__ct_ticket_count__');
             if (!el) return 0;
@@ -1187,6 +1181,7 @@ if st.session_state.get("login"):
         f'<span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>',
         unsafe_allow_html=True,
     )
+
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
@@ -1660,10 +1655,12 @@ elif menu == "🎫 Tickets":
         )
         if tickets_list:
             for t in tickets_list:
-                if not t["atendido"]:
+                atendido = bool(t["atendido"])
+                reporte_enviado = bool(t["reporte_enviado"])
+                if not atendido:
                     estado_tick = "🔴 No atendido"
                     color_tick  = CARRIER_DANGER
-                elif t["atendido"] and not t["reporte_enviado"]:
+                elif atendido and not reporte_enviado:
                     estado_tick = "🟡 Atendido (sin reporte)"
                     color_tick  = CARRIER_WARN
                 else:
@@ -1690,7 +1687,7 @@ elif menu == "🎫 Tickets":
                 )
                 if t.get("tecnico_asig"):
                     col2.markdown(f"**Asignado a:** {t['tecnico_asig']}")
-                if t["atendido"] and not t["reporte_enviado"]:
+                if atendido and not reporte_enviado:
                     if st.button("📤 Marcar reporte enviado", key=f"rep_{t['id']}", use_container_width=True):
                         execute_write(
                             "UPDATE tickets SET reporte_enviado=TRUE, fecha_reporte=%s WHERE id=%s",
@@ -2085,9 +2082,6 @@ elif menu == "🔔 Nueva Solicitud":
 # ═══════════════════════════════════════════════════════════════
 # ==================== MIS TICKETS (Técnico) ====================
 # ═══════════════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════════════
-# ==================== MIS TICKETS (Técnico) ====================
-# ═══════════════════════════════════════════════════════════════
 elif menu == "🎫 Mis Tickets":
     st.markdown('<div class="main-header">🎫 Mis Tickets</div>', unsafe_allow_html=True)
 
@@ -2103,7 +2097,7 @@ elif menu == "🎫 Mis Tickets":
         st.info("🎫 No tienes tickets asignados.")
     else:
         for t in mis_tickets:
-            atendido = bool(t["atendido"])  # fuerza True/False
+            atendido = bool(t["atendido"])
             reporte_enviado = bool(t["reporte_enviado"])
 
             if not atendido:
@@ -2138,7 +2132,6 @@ elif menu == "🎫 Mis Tickets":
                     unsafe_allow_html=True,
                 )
 
-                # Mostrar aviso explícito del estado del reporte
                 if atendido and not reporte_enviado:
                     st.warning("⚠️ El ticket está atendido pero **falta enviar el reporte**. Completa el campo de abajo y presiona **Enviar reporte**.")
                     with st.form(f"enviar_reporte_tecnico_{t['id']}"):

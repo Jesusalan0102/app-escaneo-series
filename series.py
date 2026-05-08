@@ -980,6 +980,7 @@ if not st.session_state.login:
 
 
 # ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
+# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
 if st.session_state.get("login"):
 
     _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
@@ -1003,6 +1004,7 @@ if st.session_state.get("login"):
         window.__CT_LAST_COUNT__ = {_sols_count};
 
         var TZ = 'America/Tijuana';
+
         function fmtTime(d) {{
             try {{
                 return d.toLocaleTimeString("es-MX", {{
@@ -1023,18 +1025,56 @@ if st.session_state.get("login"):
                 return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
             }} catch(e) {{ return d.toISOString().slice(0,10); }}
         }}
-        function tickClock() {{
+
+        function updateClocks() {{
             var now = new Date();
             var t   = fmtTime(now);
             var dt  = fmtDate(now);
             var sb  = document.getElementById('__sb_clock__');
             var hd  = document.getElementById('__hd_clock__');
-            if (sb) sb.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
-            if (hd) hd.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
+            if (sb) {{
+                sb.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
+            }}
+            if (hd) {{
+                hd.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
+            }}
         }}
-        tickClock();
-        setInterval(tickClock, 1000);
 
+        // Reloj inmediato e intervalo cada segundo
+        updateClocks();
+        var clockInterval = setInterval(updateClocks, 1000);
+
+        // Observador: si Streamlit recrea los elementos, los actualizamos de inmediato
+        var observer = new MutationObserver(function(mutations) {{
+            var now = new Date();
+            var t = fmtTime(now);
+            var dt = fmtDate(now);
+            mutations.forEach(function(m) {{
+                m.addedNodes.forEach(function(node) {{
+                    if (node.id === '__sb_clock__') {{
+                        node.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
+                    }}
+                    if (node.id === '__hd_clock__') {{
+                        node.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
+                    }}
+                }});
+            }});
+        }});
+        observer.observe(document.body, {{ childList: true, subtree: true }});
+
+        // Reanimación: si por alguna razón el intervalo se detiene, lo reintentamos
+        var lastClockCheck = Date.now();
+        setInterval(function() {{
+            var now = Date.now();
+            // Si han pasado más de 3 segundos desde el último tick, forzamos reinicio suave
+            if (now - lastClockCheck > 3000) {{
+                updateClocks();
+                // No detenemos el intervalo original, solo damos un empujón
+            }}
+            lastClockCheck = now;
+        }}, 5000);
+
+        // Heartbeat – LED en vivo
         var dot = document.getElementById('live-dot');
         function pingHeartbeat() {{
             fetch('/_stcore/health', {{ cache: 'no-store' }})
@@ -1050,6 +1090,7 @@ if st.session_state.get("login"):
         setInterval(pingHeartbeat, 25000);
         pingHeartbeat();
 
+        // Toast y polling de datos
         function showToast(msg) {{
             var toast = document.getElementById('update-toast');
             if (!toast) return;
@@ -1082,6 +1123,7 @@ if st.session_state.get("login"):
             }}
         }}
 
+        // Alerta de tickets
         function getTicketCount() {{
             var el = document.getElementById('__ct_ticket_count__');
             if (!el) return 0;
@@ -1127,7 +1169,6 @@ if st.session_state.get("login"):
 
         setTimeout(updateTicketAlert, 800);
         setInterval(updateTicketAlert, 30000);
-
         setInterval(pollData, 30000);
 
     }})();
@@ -1146,7 +1187,6 @@ if st.session_state.get("login"):
         f'<span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>',
         unsafe_allow_html=True,
     )
-
 
 # ==================== SIDEBAR ====================
 with st.sidebar:

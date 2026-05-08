@@ -1084,6 +1084,7 @@ with st.sidebar:
         "📦 Inventarios",
         "📸 Registro de Unidades",
         "👥 Gestión de Usuarios",
+        "🛠 Panel de Administración",
     ]
     _TECH_OPTS = ["🎯 Mis Tareas", "🔔 Nueva Solicitud", "🎫 Mis Tickets"]
     _opts  = _ADMIN_OPTS if st.session_state.role == "admin" else _TECH_OPTS
@@ -1616,11 +1617,50 @@ elif menu == "🎫 Tickets":
                     st.rerun()
 
 
+
 # ═══════════════════════════════════════════════════════════════
 # ==================== MIS TAREAS (Técnico) ====================
 # ═══════════════════════════════════════════════════════════════
 elif menu == "🎯 Mis Tareas":
     st.markdown('<div class="main-header">🎯 Mis Actividades</div>', unsafe_allow_html=True)
+
+    def _render_comentario_y_finalizar(tarea_id, ticket_id, label_btn, extra_writes=None):
+        """
+        Muestra campo de comentario obligatorio + botón de finalizar.
+        extra_writes: lista de (sql, params) a ejecutar ANTES de marcar completada.
+        """
+        st.markdown("---")
+        comentario_key = f"comentario_fin_{tarea_id}"
+        comentario_txt = st.text_area(
+            "💬 Comentario al finalizar (obligatorio)",
+            key=comentario_key,
+            placeholder="Describe brevemente lo realizado, observaciones, materiales usados, etc.",
+            height=100,
+        )
+        if st.button(label_btn, key=f"fin_btn_{tarea_id}", use_container_width=True, type="primary"):
+            if not comentario_txt.strip():
+                st.error("⚠️ Debes escribir un comentario antes de finalizar.")
+            else:
+                if extra_writes:
+                    for sql_w, params_w in extra_writes:
+                        execute_write(sql_w, params_w)
+                execute_write(
+                    "INSERT INTO comentarios_actividades (asignacion_id, tecnico, comentario) "
+                    "VALUES (%s, %s, %s)",
+                    (tarea_id, st.session_state.user, comentario_txt.strip()),
+                )
+                execute_write(
+                    "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
+                    (datetime.now(tijuana_tz), tarea_id),
+                )
+                if ticket_id:
+                    execute_write(
+                        "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
+                        (datetime.now(tijuana_tz), ticket_id),
+                    )
+                st.success("✅ Actividad finalizada con comentario guardado.")
+                _invalidate_cache()
+                st.rerun()
 
     tareas = execute_read(
         "SELECT * FROM asignaciones WHERE tecnico=%s AND estado IN ('pendiente','en_proceso')",
@@ -1728,19 +1768,10 @@ elif menu == "🎯 Mis Tareas":
                             unsafe_allow_html=True,
                         )
                     with col_fin2:
-                        if st.button("✅ Finalizar", key=f"finev_{t['id']}", use_container_width=True):
-                            execute_write(
-                                "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                                (datetime.now(tijuana_tz), t["id"]),
-                            )
-                            if t.get("ticket_id"):
-                                execute_write(
-                                    "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
-                                    (datetime.now(tijuana_tz), t["ticket_id"]),
-                                )
-                            st.success("✅ Evidencia completada.")
-                            _invalidate_cache()
-                            st.rerun()
+                        pass
+                    _render_comentario_y_finalizar(
+                        t["id"], t.get("ticket_id"), "✅ Finalizar Evidencia"
+                    )
 
                 # ── TOMA DE VALORES ──
                 elif t["actividad_id"].lower() == "toma de valores":
@@ -1786,18 +1817,13 @@ elif menu == "🎯 Mis Tareas":
                                         "VALUES (%s,%s,%s)",
                                         (t["id"], campo, valor),
                                     )
-                                execute_write(
-                                    "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                                    (datetime.now(tijuana_tz), t["id"]),
-                                )
-                                if t.get("ticket_id"):
-                                    execute_write(
-                                        "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
-                                        (datetime.now(tijuana_tz), t["ticket_id"]),
-                                    )
-                                st.success("✅ Valores guardados y actividad completada.")
+                                st.success("✅ Valores guardados. Ahora agrega un comentario y finaliza.")
                                 _invalidate_cache()
                                 st.rerun()
+
+                        _render_comentario_y_finalizar(
+                            t["id"], t.get("ticket_id"), "✅ Finalizar Toma de Valores"
+                        )
 
                     with st.expander("⚙️ Configurar campos de Toma de Valores"):
                         col_cf1, col_cf2 = st.columns([3, 1])
@@ -1846,35 +1872,19 @@ elif menu == "🎯 Mis Tareas":
                                 f"UPDATE unidades SET {set_q} WHERE unit_number=%s",
                                 list(res.values()) + [t["unidad"]],
                             )
-                            execute_write(
-                                "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                                (datetime.now(tijuana_tz), t["id"]),
-                            )
-                            if t.get("ticket_id"):
-                                execute_write(
-                                    "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
-                                    (datetime.now(tijuana_tz), t["ticket_id"]),
-                                )
-                            st.success("✅ Series guardadas y actividad completada.")
+                            st.success("✅ Series guardadas. Ahora agrega un comentario y finaliza.")
                             _invalidate_cache()
                             st.rerun()
 
+                    _render_comentario_y_finalizar(
+                        t["id"], t.get("ticket_id"), "✅ Finalizar Toma de Series"
+                    )
+
                 # ── ACTIVIDAD GENÉRICA ──
                 else:
-                    if st.button("✅ Terminar Actividad", key=f"fin_{t['id']}",
-                                 use_container_width=True, type="primary"):
-                        execute_write(
-                            "UPDATE asignaciones SET estado='completada', fecha_fin=%s WHERE id=%s",
-                            (datetime.now(tijuana_tz), t["id"]),
-                        )
-                        if t.get("ticket_id"):
-                            execute_write(
-                                "UPDATE tickets SET atendido=TRUE, fecha_atencion=%s WHERE id=%s",
-                                (datetime.now(tijuana_tz), t["ticket_id"]),
-                            )
-                        st.success("✅ Actividad finalizada.")
-                        _invalidate_cache()
-                        st.rerun()
+                    _render_comentario_y_finalizar(
+                        t["id"], t.get("ticket_id"), "✅ Terminar Actividad"
+                    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2085,3 +2095,368 @@ elif menu == "👥 Gestión de Usuarios":
                 st.rerun()
             else:
                 st.warning("⚠️ Completa todos los campos antes de guardar.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# ==================== PANEL DE ADMINISTRACIÓN ====================
+# ═══════════════════════════════════════════════════════════════
+elif menu == "🛠 Panel de Administración":
+    st.markdown('<div class="main-header">🛠 Panel de Administración</div>', unsafe_allow_html=True)
+
+    tab_asig, tab_users, tab_units, tab_sql = st.tabs([
+        "🗂 Actividades", "👥 Usuarios", "🚛 Unidades", "🗄 Base de Datos"
+    ])
+
+    # ──────────────────────────────────────────
+    # TAB 1 — ACTIVIDADES: ver, editar, eliminar
+    # ──────────────────────────────────────────
+    with tab_asig:
+        st.markdown('<div class="section-title">🗂 Todas las Actividades / Asignaciones</div>', unsafe_allow_html=True)
+
+        filtro_estado = st.selectbox(
+            "Filtrar por estado",
+            ["Todos", "solicitado", "pendiente", "en_proceso", "completada"],
+            key="adm_filtro_asig",
+        )
+        if filtro_estado == "Todos":
+            asigs = execute_read(
+                "SELECT a.*, "
+                "(SELECT comentario FROM comentarios_actividades WHERE asignacion_id=a.id ORDER BY id DESC LIMIT 1) AS ultimo_comentario "
+                "FROM asignaciones a ORDER BY a.id DESC"
+            )
+        else:
+            asigs = execute_read(
+                "SELECT a.*, "
+                "(SELECT comentario FROM comentarios_actividades WHERE asignacion_id=a.id ORDER BY id DESC LIMIT 1) AS ultimo_comentario "
+                "FROM asignaciones a WHERE a.estado=%s ORDER BY a.id DESC",
+                (filtro_estado,),
+            )
+
+        if not asigs:
+            st.info("No hay actividades con ese filtro.")
+        else:
+            st.markdown(f"**{len(asigs)} registros**")
+            ESTADO_COLOR = {
+                "solicitado":  ("#fef9c3", "#854d0e"),
+                "pendiente":   ("#fff7ed", "#9a3412"),
+                "en_proceso":  ("#eff6ff", "#1e40af"),
+                "completada":  ("#f0fdf4", "#166534"),
+            }
+            for a in asigs:
+                bg, color = ESTADO_COLOR.get(a["estado"], ("#f9fafb", "#374151"))
+                with st.container():
+                    st.markdown(
+                        f'<div style="background:{bg};border-left:5px solid {color};'
+                        f'border-radius:8px;padding:10px 16px;margin-bottom:6px;">',
+                        unsafe_allow_html=True,
+                    )
+                    c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 1, 1])
+                    c1.markdown(f"**ID {a['id']}** · {a['unidad']}")
+                    c2.markdown(f"🔧 {a['actividad_id']}")
+                    c3.markdown(f"👤 {a['tecnico']} · `{a['estado']}`")
+
+                    # ── Botón Editar ──
+                    if c4.button("✏️", key=f"adm_edit_asig_{a['id']}", help="Editar"):
+                        st.session_state[f"edit_asig_{a['id']}"] = True
+
+                    # ── Botón Eliminar ──
+                    if c5.button("🗑️", key=f"adm_del_asig_{a['id']}", help="Eliminar"):
+                        st.session_state[f"confirm_del_asig_{a['id']}"] = True
+
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    # ── Panel comentario ──
+                    if a.get("ultimo_comentario"):
+                        st.markdown(
+                            f'<div style="background:#f8faff;border-left:3px solid #0057A8;'
+                            f'padding:6px 14px;margin:-4px 0 8px 0;border-radius:0 6px 6px 0;'
+                            f'font-size:.83rem;color:#374151;">'
+                            f'💬 <b>Último comentario:</b> {a["ultimo_comentario"]}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    # ── Formulario edición ──
+                    if st.session_state.get(f"edit_asig_{a['id']}"):
+                        with st.form(f"form_edit_asig_{a['id']}"):
+                            st.markdown(f"**✏️ Editando Actividad ID {a['id']}**")
+                            ec1, ec2, ec3 = st.columns(3)
+                            nuevo_estado   = ec1.selectbox("Estado", ["solicitado","pendiente","en_proceso","completada"],
+                                                            index=["solicitado","pendiente","en_proceso","completada"].index(a["estado"]))
+                            nuevo_tecnico  = ec2.text_input("Técnico", value=a["tecnico"] or "")
+                            nueva_act      = ec3.text_input("Actividad", value=a["actividad_id"] or "")
+                            nuevo_comentario = st.text_area("Agregar comentario (opcional)", placeholder="Escribe un comentario...", key=f"adm_comt_{a['id']}")
+                            sc1, sc2 = st.columns(2)
+                            if sc1.form_submit_button("💾 Guardar cambios", use_container_width=True, type="primary"):
+                                execute_write(
+                                    "UPDATE asignaciones SET estado=%s, tecnico=%s, actividad_id=%s WHERE id=%s",
+                                    (nuevo_estado, nuevo_tecnico, nueva_act, a["id"]),
+                                )
+                                if nuevo_comentario.strip():
+                                    execute_write(
+                                        "INSERT INTO comentarios_actividades (asignacion_id, tecnico, comentario) VALUES (%s,%s,%s)",
+                                        (a["id"], st.session_state.user, nuevo_comentario.strip()),
+                                    )
+                                _invalidate_cache()
+                                st.session_state.pop(f"edit_asig_{a['id']}", None)
+                                st.success("✅ Actividad actualizada.")
+                                st.rerun()
+                            if sc2.form_submit_button("✕ Cancelar", use_container_width=True):
+                                st.session_state.pop(f"edit_asig_{a['id']}", None)
+                                st.rerun()
+
+                    # ── Confirmación eliminación ──
+                    if st.session_state.get(f"confirm_del_asig_{a['id']}"):
+                        st.warning(f"⚠️ ¿Eliminar actividad **{a['actividad_id']}** (ID {a['id']}) de {a['tecnico']}?")
+                        dc1, dc2 = st.columns(2)
+                        if dc1.button("🗑️ Sí, eliminar", key=f"yes_del_asig_{a['id']}", use_container_width=True):
+                            execute_write("DELETE FROM asignaciones WHERE id=%s", (a["id"],))
+                            execute_write("DELETE FROM comentarios_actividades WHERE asignacion_id=%s", (a["id"],))
+                            _invalidate_cache()
+                            st.session_state.pop(f"confirm_del_asig_{a['id']}", None)
+                            st.success("🗑️ Actividad eliminada.")
+                            st.rerun()
+                        if dc2.button("✕ Cancelar", key=f"no_del_asig_{a['id']}", use_container_width=True):
+                            st.session_state.pop(f"confirm_del_asig_{a['id']}", None)
+                            st.rerun()
+
+        # ── Ver comentarios completos por actividad ──
+        st.markdown("---")
+        st.markdown('<div class="section-title">💬 Historial de Comentarios</div>', unsafe_allow_html=True)
+        comentarios_all = execute_read(
+            "SELECT ca.*, a.unidad, a.actividad_id "
+            "FROM comentarios_actividades ca "
+            "LEFT JOIN asignaciones a ON ca.asignacion_id = a.id "
+            "ORDER BY ca.fecha DESC LIMIT 100"
+        )
+        if not comentarios_all:
+            st.info("Sin comentarios registrados aún.")
+        else:
+            for c in comentarios_all:
+                st.markdown(
+                    f'<div style="background:white;border-radius:10px;padding:10px 16px;'
+                    f'margin-bottom:8px;box-shadow:0 2px 8px rgba(0,43,91,0.07);'
+                    f'border-left:4px solid #0057A8;">'
+                    f'<span style="font-weight:700;color:#002B5B;">💬 {c["tecnico"]}</span>'
+                    f' &nbsp;·&nbsp; <b>{c.get("unidad","—")}</b> — {c.get("actividad_id","—")}'
+                    f'<br><span style="color:#374151;font-size:.9rem;">{c["comentario"]}</span>'
+                    f'<br><span style="color:#9ca3af;font-size:.78rem;">{c["fecha"]}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+    # ──────────────────────────────────────────
+    # TAB 2 — USUARIOS: editar y eliminar
+    # ──────────────────────────────────────────
+    with tab_users:
+        st.markdown('<div class="section-title">👥 Administrar Usuarios</div>', unsafe_allow_html=True)
+        usuarios_all = execute_read("SELECT id, username, role FROM users ORDER BY role, username")
+
+        if not usuarios_all:
+            st.info("No hay usuarios registrados.")
+        else:
+            for u in usuarios_all:
+                with st.container():
+                    uc1, uc2, uc3, uc4 = st.columns([3, 2, 1, 1])
+                    uc1.markdown(f"**{u['username']}**")
+                    uc2.markdown(f"`{u['role']}`")
+
+                    if uc3.button("✏️", key=f"adm_edit_user_{u['id']}", help="Editar"):
+                        st.session_state[f"edit_user_{u['id']}"] = True
+
+                    if uc4.button("🗑️", key=f"adm_del_user_{u['id']}", help="Eliminar"):
+                        st.session_state[f"confirm_del_user_{u['id']}"] = True
+
+                    # ── Editar usuario ──
+                    if st.session_state.get(f"edit_user_{u['id']}"):
+                        with st.form(f"form_edit_user_{u['id']}"):
+                            st.markdown(f"**✏️ Editando usuario: {u['username']}**")
+                            euc1, euc2, euc3 = st.columns(3)
+                            nuevo_nombre = euc1.text_input("Nombre de usuario", value=u["username"])
+                            nueva_pass   = euc2.text_input("Nueva contraseña", type="password", placeholder="Dejar vacío = no cambiar")
+                            nuevo_rol    = euc3.selectbox("Rol", ["tecnico", "admin"],
+                                                           index=0 if u["role"] == "tecnico" else 1)
+                            sc1, sc2 = st.columns(2)
+                            if sc1.form_submit_button("💾 Guardar", use_container_width=True, type="primary"):
+                                if nueva_pass.strip():
+                                    execute_write(
+                                        "UPDATE users SET username=%s, password=%s, role=%s WHERE id=%s",
+                                        (nuevo_nombre, nueva_pass.strip(), nuevo_rol, u["id"]),
+                                    )
+                                else:
+                                    execute_write(
+                                        "UPDATE users SET username=%s, role=%s WHERE id=%s",
+                                        (nuevo_nombre, nuevo_rol, u["id"]),
+                                    )
+                                _invalidate_cache()
+                                st.session_state.pop(f"edit_user_{u['id']}", None)
+                                st.success("✅ Usuario actualizado.")
+                                st.rerun()
+                            if sc2.form_submit_button("✕ Cancelar", use_container_width=True):
+                                st.session_state.pop(f"edit_user_{u['id']}", None)
+                                st.rerun()
+
+                    # ── Confirmar eliminar usuario ──
+                    if st.session_state.get(f"confirm_del_user_{u['id']}"):
+                        st.warning(f"⚠️ ¿Eliminar usuario **{u['username']}**? Esta acción no se puede deshacer.")
+                        dc1, dc2 = st.columns(2)
+                        if dc1.button("🗑️ Sí, eliminar", key=f"yes_del_user_{u['id']}", use_container_width=True):
+                            execute_write("DELETE FROM users WHERE id=%s", (u["id"],))
+                            _invalidate_cache()
+                            st.session_state.pop(f"confirm_del_user_{u['id']}", None)
+                            st.success("🗑️ Usuario eliminado.")
+                            st.rerun()
+                        if dc2.button("✕ Cancelar", key=f"no_del_user_{u['id']}", use_container_width=True):
+                            st.session_state.pop(f"confirm_del_user_{u['id']}", None)
+                            st.rerun()
+
+                st.markdown("<hr style='margin:4px 0;border-color:#e5eaf2;'>", unsafe_allow_html=True)
+
+    # ──────────────────────────────────────────
+    # TAB 3 — UNIDADES: editar y eliminar
+    # ──────────────────────────────────────────
+    with tab_units:
+        st.markdown('<div class="section-title">🚛 Administrar Unidades</div>', unsafe_allow_html=True)
+        unidades_all = execute_read(
+            "SELECT id, unit_number, id_lote, vin_number, reefer_serial, reefer_model, "
+            "engine_serial, compressor_serial FROM unidades ORDER BY id_lote, unit_number"
+        )
+        if not unidades_all:
+            st.info("No hay unidades registradas.")
+        else:
+            for un in unidades_all:
+                with st.container():
+                    uu1, uu2, uu3, uu4 = st.columns([3, 2, 1, 1])
+                    uu1.markdown(f"**{un['unit_number']}** · Lote: `{un['id_lote'] or '—'}`")
+                    uu2.markdown(f"VIN: `{un['vin_number'] or '—'}`")
+
+                    if uu3.button("✏️", key=f"adm_edit_unit_{un['id']}", help="Editar"):
+                        st.session_state[f"edit_unit_{un['id']}"] = True
+
+                    if uu4.button("🗑️", key=f"adm_del_unit_{un['id']}", help="Eliminar"):
+                        st.session_state[f"confirm_del_unit_{un['id']}"] = True
+
+                    # ── Editar unidad ──
+                    if st.session_state.get(f"edit_unit_{un['id']}"):
+                        full_unit = execute_read("SELECT * FROM unidades WHERE id=%s", (un["id"],))
+                        fu = full_unit[0] if full_unit else un
+                        with st.form(f"form_edit_unit_{un['id']}"):
+                            st.markdown(f"**✏️ Editando Unidad: {un['unit_number']}**")
+                            fu1, fu2 = st.columns(2)
+                            fu_num   = fu1.text_input("Número Económico", value=fu.get("unit_number") or "")
+                            fu_lote  = fu2.text_input("Lote", value=fu.get("id_lote") or "")
+                            st.markdown("**Seriales:**")
+                            sc = st.columns(2)
+                            new_vals = {}
+                            campos_list = list(CAMPOS_SERIES.items())
+                            for i, (k, v) in enumerate(campos_list):
+                                new_vals[k] = sc[i % 2].text_input(v, value=fu.get(k) or "", key=f"eu_{un['id']}_{k}")
+                            sv1, sv2 = st.columns(2)
+                            if sv1.form_submit_button("💾 Guardar", use_container_width=True, type="primary"):
+                                set_parts = ["unit_number=%s", "id_lote=%s"] + [f"{k}=%s" for k in new_vals]
+                                vals      = [fu_num, fu_lote] + list(new_vals.values()) + [un["id"]]
+                                execute_write(
+                                    f"UPDATE unidades SET {', '.join(set_parts)} WHERE id=%s", vals
+                                )
+                                _invalidate_cache()
+                                st.session_state.pop(f"edit_unit_{un['id']}", None)
+                                st.success("✅ Unidad actualizada.")
+                                st.rerun()
+                            if sv2.form_submit_button("✕ Cancelar", use_container_width=True):
+                                st.session_state.pop(f"edit_unit_{un['id']}", None)
+                                st.rerun()
+
+                    # ── Confirmar eliminar unidad ──
+                    if st.session_state.get(f"confirm_del_unit_{un['id']}"):
+                        st.warning(f"⚠️ ¿Eliminar unidad **{un['unit_number']}**? Se borrarán también sus asignaciones y evidencias.")
+                        dc1, dc2 = st.columns(2)
+                        if dc1.button("🗑️ Sí, eliminar", key=f"yes_del_unit_{un['id']}", use_container_width=True):
+                            execute_write("DELETE FROM evidencias WHERE unit_number=%s", (un["unit_number"],))
+                            execute_write("DELETE FROM asignaciones WHERE unidad=%s", (un["unit_number"],))
+                            execute_write("DELETE FROM unidades WHERE id=%s", (un["id"],))
+                            _invalidate_cache()
+                            st.session_state.pop(f"confirm_del_unit_{un['id']}", None)
+                            st.success("🗑️ Unidad eliminada.")
+                            st.rerun()
+                        if dc2.button("✕ Cancelar", key=f"no_del_unit_{un['id']}", use_container_width=True):
+                            st.session_state.pop(f"confirm_del_unit_{un['id']}", None)
+                            st.rerun()
+
+                st.markdown("<hr style='margin:4px 0;border-color:#e5eaf2;'>", unsafe_allow_html=True)
+
+    # ──────────────────────────────────────────
+    # TAB 4 — BASE DE DATOS: SQL directo
+    # ──────────────────────────────────────────
+    with tab_sql:
+        st.markdown('<div class="section-title">🗄 Consulta / Edición Directa de Base de Datos</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="evidencia-info"><p>⚠️ <b>Zona de acceso total.</b> '
+            'Puedes ejecutar cualquier SQL (SELECT, UPDATE, DELETE, INSERT). '
+            'Los cambios son permanentes e inmediatos en la BD.</p></div>',
+            unsafe_allow_html=True,
+        )
+
+        # Explorador de tablas
+        st.markdown("**📋 Tablas disponibles:**")
+        tablas_db = execute_read("SHOW TABLES")
+        nombres_tablas = []
+        if tablas_db:
+            for row in tablas_db:
+                nombres_tablas.append(list(row.values())[0])
+            st.markdown(
+                "  ".join([
+                    f'<span style="background:#e8f0fb;border:1px solid #b0c4de;border-radius:6px;'
+                    f'padding:3px 10px;font-size:.82rem;font-weight:600;color:#002B5B;">{t}</span>'
+                    for t in nombres_tablas
+                ]),
+                unsafe_allow_html=True,
+            )
+
+        # Explorar tabla rápido
+        st.markdown("---")
+        col_ex1, col_ex2 = st.columns([3, 1])
+        tabla_sel = col_ex1.selectbox("🔍 Explorar tabla", nombres_tablas, key="adm_tabla_sel") if nombres_tablas else None
+        limite_sel = col_ex2.number_input("Límite filas", min_value=5, max_value=500, value=50, step=10, key="adm_limite")
+        if tabla_sel and st.button("📂 Ver tabla", use_container_width=False, key="adm_ver_tabla"):
+            rows = execute_read(f"SELECT * FROM `{tabla_sel}` ORDER BY id DESC LIMIT %s", (int(limite_sel),))
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("Tabla vacía o sin filas.")
+
+        # SQL libre
+        st.markdown("---")
+        st.markdown("**⌨️ SQL libre:**")
+        sql_input = st.text_area(
+            "Escribe tu consulta SQL",
+            height=130,
+            placeholder="SELECT * FROM asignaciones WHERE estado='completada' LIMIT 20;\nUPDATE users SET password='nueva' WHERE username='fulano';\nDELETE FROM asignaciones WHERE id=99;",
+            key="adm_sql_input",
+        )
+        col_run1, col_run2 = st.columns([1, 4])
+        if col_run1.button("▶️ Ejecutar SQL", use_container_width=True, type="primary", key="adm_run_sql"):
+            sql_clean = sql_input.strip().rstrip(";")
+            if not sql_clean:
+                st.warning("⚠️ Escribe una consulta SQL.")
+            else:
+                verb = sql_clean.strip().upper().split()[0] if sql_clean.strip() else ""
+                if verb == "SELECT" or verb == "SHOW" or verb == "DESCRIBE" or verb == "EXPLAIN":
+                    try:
+                        resultado = execute_read(sql_clean)
+                        _invalidate_cache()
+                        if resultado:
+                            st.success(f"✅ {len(resultado)} fila(s) devuelta(s).")
+                            st.dataframe(pd.DataFrame(resultado), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("La consulta no devolvió resultados.")
+                    except Exception as ex:
+                        st.error(f"❌ Error: {ex}")
+                else:
+                    try:
+                        ok = execute_write(sql_clean)
+                        _invalidate_cache()
+                        if ok:
+                            st.success("✅ Consulta ejecutada correctamente.")
+                        else:
+                            st.error("❌ La consulta falló. Revisa la sintaxis.")
+                    except Exception as ex:
+                        st.error(f"❌ Error: {ex}")

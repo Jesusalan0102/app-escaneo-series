@@ -65,7 +65,7 @@ ACTIVIDADES_CARRIER = [
 
 MAX_FOTOS = 100
 
-# ==================== CSS PREMIUM ====================
+# ==================== CSS PREMIUM (COMPLETO) ====================
 st.markdown(f"""
 <style>
 header[data-testid="stHeader"] {{ display: none !important; }}
@@ -73,25 +73,165 @@ footer {{ display: none !important; }}
 #MainMenu {{ display: none !important; }}
 .stDeployButton {{ display: none !important; }}
 [data-testid="stToolbar"] {{ display: none !important; }}
+[data-testid="manage-app-button"] {{ display: none !important; }}
+[data-testid="stStatusWidget"] {{ display: none !important; }}
 .block-container {{ padding-top: 1.5rem !important; }}
-section[data-testid="stSidebar"] {{ width: 21rem !important; }}
-.main-header {{ font-size: 1.75rem; font-weight: 800; color: {CARRIER_BLUE}; border-bottom: 3px solid {CARRIER_ACCENT}; padding-bottom: 12px; margin-bottom: 24px; }}
-.section-title {{ font-size: 0.92rem; font-weight: 700; color: {CARRIER_BLUE}; border-left: 4px solid {CARRIER_ACCENT}; padding: 9px 14px; margin: 22px 0 14px 0; background: white; border-radius: 0 8px 8px 0; }}
-.kpi-wrap {{ background: white; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 4px 20px rgba(0,43,91,0.08); border-top: 5px solid {CARRIER_ACCENT}; }}
-.kpi-num {{ font-size: 2.4rem; font-weight: 800; color: {CARRIER_BLUE}; }}
-.kpi-lbl {{ font-size: 0.73rem; color: #6b7280; font-weight: 600; }}
-.time-badge {{ background: {CARRIER_BLUE}; color: white; padding: 6px 16px; border-radius: 24px; float: right; }}
-.login-card {{ background: white; padding: 36px 40px; border-radius: 20px; box-shadow: 0 12px 40px rgba(0,43,91,0.18); }}
-.evidencia-info {{ background: #eff6ff; border-left: 5px solid #3b82f6; padding: 12px 18px; border-radius: 10px; margin-bottom: 14px; }}
-.fotos-badge {{ background: #f0fdf4; border: 1px solid #86efac; border-radius: 20px; padding: 4px 14px; display: inline-block; }}
-.tv-field-badge {{ background: {CARRIER_LIGHT}; border: 1px solid #c3d4f0; border-radius: 8px; padding: 6px 12px; display: inline-block; }}
-.inv-info-bar {{ background: linear-gradient(90deg, {CARRIER_BLUE}, {CARRIER_ACCENT}); color: white; padding: 14px 20px; border-radius: 12px; margin-bottom: 16px; }}
-.bloqueo-card {{ background: #fef2f2; border-left: 5px solid {CARRIER_DANGER}; border-radius: 10px; padding: 14px 18px; margin: 8px 0; }}
-.user-chip {{ background: rgba(255,255,255,0.12); border-radius: 50px; padding: 6px 14px; color: white; display: inline-block; }}
+
+section[data-testid="stSidebar"] {{
+    transform: none !important;
+    visibility: visible !important;
+    width: 21rem !important;
+    min-width: 21rem !important;
+    display: block !important;
+    transition: transform 0.28s ease !important;
+}}
+button[data-testid="baseButton-header"],
+[data-testid="stSidebarCollapsedControl"] {{
+    display: none !important;
+}}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+.stApp {{
+    background: linear-gradient(135deg, #EEF2F9 0%, #F5F7FB 60%, #EAF0FB 100%) !important;
+    font-family: 'Inter', sans-serif !important;
+}}
+
+section[data-testid="stSidebar"] > div:first-child {{
+    background: linear-gradient(180deg, {CARRIER_BLUE} 0%, #01418a 60%, #0056b3 100%) !important;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    padding-top: 0.5rem;
+}}
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span {{ color: #e0eaff !important; }}
+section[data-testid="stSidebar"] .stRadio > label {{
+    color: white !important; font-weight: 600; font-size: 0.72rem; letter-spacing: 1.5px;
+}}
+section[data-testid="stSidebar"] hr {{ border-color: rgba(255,255,255,0.15) !important; }}
+section[data-testid="stSidebar"] button {{
+    background: rgba(255,255,255,0.1) !important;
+    color: white !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}}
+section[data-testid="stSidebar"] button:hover {{
+    background: rgba(255,255,255,0.22) !important;
+    border-color: rgba(255,255,255,0.4) !important;
+    transform: translateX(2px) !important;
+}}
+
+.main-header {{
+    font-size: 1.75rem; font-weight: 800; color: {CARRIER_BLUE};
+    border-bottom: 3px solid {CARRIER_ACCENT};
+    padding-bottom: 12px; margin-bottom: 24px;
+    display: flex; align-items: center; gap: 12px;
+}}
+.section-title {{
+    font-size: 0.92rem; font-weight: 700; color: {CARRIER_BLUE};
+    border-left: 4px solid {CARRIER_ACCENT};
+    padding: 9px 14px; margin: 22px 0 14px 0;
+    background: white; border-radius: 0 8px 8px 0;
+    box-shadow: 0 2px 8px rgba(0,43,91,0.07);
+}}
+
+.kpi-wrap {{
+    background: white; border-radius: 16px;
+    padding: 20px 22px 18px; text-align: center;
+    box-shadow: 0 4px 20px rgba(0,43,91,0.08);
+    border-top: 5px solid {CARRIER_ACCENT};
+    transition: transform 0.2s;
+}}
+.kpi-wrap:hover {{ transform: translateY(-3px); }}
+.kpi-wrap.green  {{ border-top-color: {CARRIER_SUCCESS}; }}
+.kpi-wrap.amber  {{ border-top-color: {CARRIER_WARN}; }}
+.kpi-wrap.red    {{ border-top-color: {CARRIER_DANGER}; }}
+.kpi-wrap.purple {{ border-top-color: #7c3aed; }}
+.kpi-num {{
+    font-size: 2.4rem; font-weight: 800; color: {CARRIER_BLUE};
+    line-height: 1.1;
+}}
+.kpi-lbl {{
+    font-size: 0.73rem; color: #6b7280; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.6px; margin-top: 6px;
+}}
+
+.time-badge {{
+    background: {CARRIER_BLUE}; color: white;
+    padding: 6px 16px; border-radius: 24px;
+    font-size: 0.82rem; font-weight: 600; float: right;
+    margin-top: 2px;
+}}
+
+div[data-testid="stExpander"] {{
+    background: white; border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    border: 1px solid #e2e8f2; margin-bottom: 10px;
+}}
+
+.stButton > button {{
+    border-radius: 10px; font-weight: 600;
+    transition: all 0.2s ease;
+}}
+
+div[data-testid="stForm"] {{
+    background: white; border-radius: 14px;
+    padding: 22px 26px;
+    box-shadow: 0 3px 14px rgba(0,43,91,0.07);
+    border: 1px solid #e2e8f2;
+}}
+
+.bloqueo-card {{
+    background: #fef2f2; border: 1.5px solid #fca5a5;
+    border-left: 5px solid {CARRIER_DANGER}; border-radius: 10px;
+    padding: 14px 18px; margin: 8px 0;
+}}
+.evidencia-info {{
+    background: #eff6ff; border: 1px solid #bfdbfe;
+    border-left: 5px solid #3b82f6; border-radius: 10px;
+    padding: 12px 18px; margin-bottom: 14px;
+}}
+.fotos-badge {{
+    display: inline-block; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 20px;
+    padding: 4px 14px; font-size: .85rem;
+    color: #166534; font-weight: 600; margin-top: 10px;
+}}
+.inv-info-bar {{
+    background: linear-gradient(90deg, {CARRIER_BLUE}, {CARRIER_ACCENT});
+    color: white; padding: 14px 20px; border-radius: 12px;
+    margin-bottom: 16px;
+}}
+.tv-field-badge {{
+    background: {CARRIER_LIGHT}; border: 1px solid #c3d4f0;
+    border-radius: 8px; padding: 6px 12px;
+    font-size: 0.82rem; color: {CARRIER_BLUE}; font-weight: 600;
+    display: inline-block; margin-bottom: 8px;
+}}
+.login-card {{
+    background: white; padding: 36px 40px; border-radius: 20px;
+    box-shadow: 0 12px 40px rgba(0,43,91,0.18);
+}}
+.user-chip {{
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 50px; padding: 6px 14px;
+    color: white !important; font-size: 0.82rem; font-weight: 500;
+    display: inline-block; margin-top: 4px;
+}}
+[data-testid="stDataFrame"] {{
+    border-radius: 10px; overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,43,91,0.06);
+}}
+@media (max-width: 768px) {{
+    .main-header {{ font-size: 1.2rem; }}
+    .kpi-num {{ font-size: 1.6rem; }}
+    .login-card {{ padding: 20px 16px; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== CONEXIÓN A TIDB CLOUD (via secrets) ====================
+# ==================== CONEXIÓN A TIDB CLOUD (LEYENDO SECRETS) ====================
 def _get_db_config():
     import os
     try:
@@ -113,10 +253,18 @@ def _get_db_config():
                 "use_pure": True,
             }
         else:
-            st.error("❌ Faltan variables de entorno o secrets de base de datos")
-            return None
+            # Fallback para desarrollo local (cambia la contraseña)
+            return {
+                "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
+                "port": 4000,
+                "user": "4BgYs96t9XXhCMS.root",
+                "password": "YZcSUhQ5H7Gx9vLk",
+                "database": "carrier_db",
+                "connection_timeout": 30,
+                "autocommit": True,
+                "use_pure": True,
+            }
     except Exception:
-        # Fallback solo para pruebas locales (no usar en producción con repo público)
         return {
             "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
             "port": 4000,
@@ -227,7 +375,7 @@ def execute_write(query, params=None, wait=False):
     return ok
 
 def init_extra_tables():
-    # Las tablas ya deben existir en TiDB; este método se deja por compatibilidad.
+    # Las tablas ya deben existir en TiDB; dejamos pasar.
     pass
 
 # ==================== ESTADO DE SESIÓN ====================
@@ -242,7 +390,30 @@ if not st.session_state.login and params.get("u") and params.get("r"):
 if params.get("m") and st.session_state.menu_sel is None:
     st.session_state.menu_sel = params["m"]
 
-# ==================== LOGIN ====================
+if not st.session_state.login:
+    st.markdown("""
+    <script>
+    (function() {
+        var u = null, r = null, m = null;
+        try {
+            u = localStorage.getItem('ct_user');
+            r = localStorage.getItem('ct_role');
+            m = localStorage.getItem('ct_menu');
+        } catch(e) { return; }
+        if (u && r) {
+            var sp = new URLSearchParams(window.location.search);
+            if (!sp.get('u')) {
+                sp.set('u', u);
+                sp.set('r', r);
+                if (m) sp.set('m', m);
+                window.location.search = sp.toString();
+            }
+        }
+    })();
+    </script>
+    """, unsafe_allow_html=True)
+
+# ==================== LOGIN (CORREGIDO) ====================
 if not st.session_state.login:
     if "_login_u" not in st.session_state:
         st.session_state._login_u = ""
@@ -269,7 +440,7 @@ if not st.session_state.login:
                 st.rerun()
             else:
                 with st.spinner("Verificando..."):
-                    user = execute_read("SELECT * FROM users WHERE username=%s AND password=%s", (_u, _p))
+                    user = execute_read("SELECT * FROM users WHERE username = %s AND password = %s", (_u, _p))
                 if not user:
                     st.session_state._login_err = "❌ Credenciales incorrectas"
                     st.rerun()
@@ -277,17 +448,50 @@ if not st.session_state.login:
                     st.session_state.update({"login": True, "user": user[0]["username"], "role": user[0]["role"].lower()})
                     st.query_params["u"] = user[0]["username"]
                     st.query_params["r"] = user[0]["role"].lower()
+                    # Guardar en localStorage
+                    st.markdown(f"""
+                    <script>
+                    try {{
+                        localStorage.setItem('ct_user', '{user[0]["username"]}');
+                        localStorage.setItem('ct_role', '{user[0]["role"].lower()}');
+                        localStorage.setItem('ct_menu', '{st.session_state.menu_sel or ""}');
+                    }} catch(e) {{}}
+                    </script>
+                    """, unsafe_allow_html=True)
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
+# ==================== ACTUALIZACIÓN EN VIVO (SOLO SI LOGUEADO) ====================
+if st.session_state.login:
+    _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
+    st.markdown(f"""
+    <script>
+    (function() {{
+        if (window.__CT_ENGINE_STARTED__) return;
+        window.__CT_ENGINE_STARTED__ = true;
+        window.__CT_LAST_COUNT__ = {_sols_count};
+        function tickClock() {{
+            var now = new Date();
+            var t = now.toLocaleTimeString("es-MX", {{ timeZone: "America/Tijuana", hour:"2-digit", minute:"2-digit", second:"2-digit" }});
+            var dt = now.toLocaleDateString("es-MX", {{ timeZone: "America/Tijuana", year:"numeric", month:"2-digit", day:"2-digit" }});
+            var sb = document.getElementById('__sb_clock__');
+            if(sb) sb.innerHTML = '🕒 <b>' + t + '</b> &nbsp;·&nbsp; ' + dt;
+        }}
+        tickClock();
+        setInterval(tickClock, 1000);
+    }})();
+    </script>
+    """, unsafe_allow_html=True)
+    st.markdown(f'<span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>', unsafe_allow_html=True)
+
 # ==================== SIDEBAR ====================
 with st.sidebar:
     st.image(LOGO_DATA_URI, width=210)
-    st.markdown(f"<p style='margin:8px 0;font-size:.82rem;color:#c3d4f0;'>🕒 {hora_actual} &nbsp;·&nbsp; {fecha_hoy}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p id='__sb_clock__' style='margin:8px 0;font-size:.82rem;color:#c3d4f0;'>🕒 {hora_actual} &nbsp;·&nbsp; {fecha_hoy}</p>", unsafe_allow_html=True)
     st.markdown("---")
     role_label = "🛡 Administrador" if st.session_state.role == "admin" else "🔧 Técnico"
-    st.markdown(f"<b>👤 {st.session_state.user}</b><br><span class='user-chip'>{role_label}</span>", unsafe_allow_html=True)
+    st.markdown(f"<p style='margin:0 0 4px;font-size:.95rem;font-weight:700;'>👤 {st.session_state.user}</p><span class='user-chip'>{role_label}</span>", unsafe_allow_html=True)
     st.markdown("---")
     if st.session_state.role == "admin":
         _opts = ["📊 Dashboard Ejecutivo", "🎯 Control de Asignaciones", "🎫 Tickets", "📦 Inventarios", "📸 Registro de Unidades", "👥 Gestión de Usuarios"]
@@ -298,6 +502,12 @@ with st.sidebar:
     def _on_menu():
         st.session_state.menu_sel = st.session_state._menu_key
         st.query_params["m"] = st.session_state._menu_key
+        # Guardar en localStorage
+        st.markdown(f"""
+        <script>
+        try {{ localStorage.setItem('ct_menu', '{st.session_state._menu_key}'); }} catch(e) {{}}
+        </script>
+        """, unsafe_allow_html=True)
     menu = st.radio("MENÚ PRINCIPAL" if st.session_state.role == "admin" else "ÁREA DE TRABAJO", _opts, index=_idx, key="_menu_key", on_change=_on_menu)
     st.session_state.menu_sel = menu
     st.query_params["m"] = menu
@@ -305,11 +515,11 @@ with st.sidebar:
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
         for k in ["login", "user", "role", "last_count"]:
             st.session_state[k] = False if k == "login" else "" if k != "last_count" else 0
+        st.markdown("""<script>try { localStorage.removeItem('ct_user'); localStorage.removeItem('ct_role'); localStorage.removeItem('ct_menu'); } catch(e) {}</script>""", unsafe_allow_html=True)
         st.query_params.clear()
         st.rerun()
 
 # ==================== FUNCIONES AUXILIARES ====================
-@st.cache_data(ttl=3600)
 def get_next_ticket_num():
     res = execute_read("SELECT MAX(ticket_num) as max_num FROM tickets")
     if res and res[0]["max_num"]:
@@ -318,7 +528,7 @@ def get_next_ticket_num():
 
 # ==================== DASHBOARD EJECUTIVO ====================
 if menu == "📊 Dashboard Ejecutivo":
-    st.markdown(f'<div class="time-badge">🕒 {hora_actual}</div><div class="main-header">📊 Panel de Rendimiento Operativo</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="time-badge">🕒 Tijuana: {hora_actual}</div><div class="main-header">📊 Panel de Rendimiento Operativo</div>', unsafe_allow_html=True)
     asig = execute_read("SELECT * FROM asignaciones")
     unid = execute_read("SELECT * FROM unidades")
     df_a = pd.DataFrame(asig) if asig else pd.DataFrame()
@@ -342,10 +552,10 @@ if menu == "📊 Dashboard Ejecutivo":
     if not df_a.empty:
         st.markdown('<div class="section-title">📈 Estadísticas por Técnico</div>', unsafe_allow_html=True)
         stats = df_a.groupby("tecnico").agg(
-            Total=("id", "count"),
-            Completadas=("estado", lambda x: (x == "completada").sum()),
-            En_Curso=("estado", lambda x: (x == "en_proceso").sum()),
-            Pendientes=("estado", lambda x: (x == "pendiente").sum())
+            Total=("id","count"),
+            Completadas=("estado", lambda x: (x=="completada").sum()),
+            En_Curso=("estado", lambda x: (x=="en_proceso").sum()),
+            Pendientes=("estado", lambda x: (x=="pendiente").sum())
         ).reset_index()
         stats["Rendimiento %"] = ((stats["Completadas"] / stats["Total"]) * 100).round(0).astype(int)
         st.dataframe(stats.sort_values("Total", ascending=False), use_container_width=True, hide_index=True)
@@ -353,11 +563,11 @@ if menu == "📊 Dashboard Ejecutivo":
         c1, c2 = st.columns(2)
         with c1:
             fig_b = px.bar(df_a, x="tecnico", color="estado", title="Carga de Trabajo por Técnico", color_discrete_map=COLOR_MAP, template="plotly_white")
-            fig_b.update_layout(paper_bgcolor="white", plot_bgcolor="white", title_font=dict(color=CARRIER_BLUE, size=15))
+            fig_b.update_layout(paper_bgcolor="white", plot_bgcolor="white", title_font=dict(color=CARRIER_BLUE, size=15), font=dict(family="Inter"))
             st.plotly_chart(fig_b, use_container_width=True)
         with c2:
             fig_p = px.pie(df_a, names="estado", title="Distribución Global", hole=0.55, color_discrete_map=COLOR_MAP, template="plotly_white")
-            fig_p.update_layout(paper_bgcolor="white")
+            fig_p.update_layout(paper_bgcolor="white", title_font=dict(color=CARRIER_BLUE, size=15))
             st.plotly_chart(fig_p, use_container_width=True)
     st.markdown('<div class="section-title">📋 Estatus de Proceso por Unidad</div>', unsafe_allow_html=True)
     if unid:
@@ -369,7 +579,7 @@ if menu == "📊 Dashboard Ejecutivo":
             for act in ACTIVIDADES_CARRIER:
                 row[act] = "✔" if (u["unit_number"], act) in completed_set else "–"
             status_data.append(row)
-        st.dataframe(pd.DataFrame(status_data), use_container_width=True, height=340)
+        st.dataframe(pd.DataFrame(status_data), use_container_width=True, hide_index=True, height=340)
     st.markdown('<div class="section-title">📂 Descarga de Evidencias por Unidad</div>', unsafe_allow_html=True)
     if unid:
         col_ev1, col_ev2 = st.columns([3,1])
@@ -383,9 +593,9 @@ if menu == "📊 Dashboard Ejecutivo":
             with zipfile.ZipFile(buf, "a", zipfile.ZIP_DEFLATED, False) as zf:
                 for ev in ev_archivos:
                     zf.writestr(ev["nombre_archivo"], ev["contenido"])
-            st.download_button(f"📥 Descargar {len(ev_archivos)} fotos — Unidad {u_sel_ev}", buf.getvalue(), f"{u_sel_ev}_evidencia.zip", use_container_width=True)
+            st.download_button(f"📥 Descargar {len(ev_archivos)} fotos — Unidad {u_sel_ev}", buf.getvalue(), f"{u_sel_ev}_evidencia.zip", "application/zip", use_container_width=True)
         else:
-            st.info("Sin fotos cargadas para esta unidad")
+            st.info("Sin fotos cargadas para esta unidad.")
     st.markdown('<div class="section-title">📥 Reportes y Descargas</div>', unsafe_allow_html=True)
     if unid:
         df_u = pd.DataFrame(unid)
@@ -395,6 +605,11 @@ if menu == "📊 Dashboard Ejecutivo":
             if not df_a.empty:
                 df_a.to_excel(writer, index=False, sheet_name="Actividades")
         st.download_button("📊 Descargar Reporte Maestro General (Excel)", buffer.getvalue(), f"Carrier_Reporte_{fecha_hoy}.xlsx", use_container_width=True, type="primary")
+        st.markdown("<br>")
+        for lote in sorted(df_u["id_lote"].unique()):
+            n = len(df_u[df_u["id_lote"] == lote])
+            with st.expander(f"📦 Lote: {lote}  ({n} unidades)"):
+                st.table(df_u[df_u["id_lote"] == lote][["unit_number"] + list(CAMPOS_SERIES.keys())])
 
 # ==================== INVENTARIOS ====================
 elif menu == "📦 Inventarios":
@@ -433,7 +648,7 @@ elif menu == "📦 Inventarios":
     st.markdown(f'<div class="inv-info-bar">🗄 Inventario Principal · {len(df_inv)} registros · {len(columnas)} columnas</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Tabla de Inventario", "⚙️ Configurar Columnas"])
     with tab1:
-        col_add, col_del, col_save = st.columns([1,1,2])
+        col_add, col_del, _ = st.columns([1,1,2])
         with col_add:
             if st.button("➕ Agregar Fila", use_container_width=True):
                 nueva_fila = pd.DataFrame([{c: "" for c in columnas}])
@@ -456,9 +671,9 @@ elif menu == "📦 Inventarios":
                 st.success("✅ Inventario guardado correctamente.")
                 st.rerun()
             buf_inv = io.BytesIO()
-            with pd.ExcelWriter(buf_inv, engine="openpyxl") as w:
-                df_inv.to_excel(w, index=False, sheet_name="Inventario")
-            st.download_button("📥 Exportar Inventario a Excel", buf_inv.getvalue(), f"Inventario_{fecha_hoy}.xlsx", use_container_width=True)
+            with pd.ExcelWriter(buf_inv, engine="openpyxl") as writer:
+                df_inv.to_excel(writer, index=False, sheet_name="Inventario")
+            st.download_button("📥 Exportar Inventario a Excel", buf_inv.getvalue(), f"Inventario_Carrier_{fecha_hoy}.xlsx", use_container_width=True)
     with tab2:
         st.markdown('<div class="section-title">⚙️ Administrar Columnas</div>', unsafe_allow_html=True)
         with st.form("add_col_form"):
@@ -490,15 +705,15 @@ elif menu == "📦 Inventarios":
                         columnas[i] = nuevo_nombre
                         save_inv_columnas(columnas)
                         st.rerun()
-                col_d1, col_d2 = st.columns([5,1])
-                if len(columnas) > 1 and col_d2.button("🗑", key=f"del_col_{i}"):
+                _, _, col_del_btn = st.columns([5,0,1])
+                if len(columnas) > 1 and col_del_btn.button("🗑", key=f"del_col_{i}"):
                     columnas.pop(i)
                     save_inv_columnas(columnas)
                     if not df_inv.empty and col in df_inv.columns:
                         df_inv = df_inv.drop(columns=[col])
                         save_inv_data(df_inv)
                     st.rerun()
-                st.markdown("<hr style='margin:4px 0;border-color:#f0f0f0;'>", unsafe_allow_html=True)
+                st.markdown("<hr>", unsafe_allow_html=True)
         else:
             st.info("No hay columnas definidas.")
 
@@ -747,7 +962,7 @@ elif menu == "🎫 Tickets":
                 else:
                     st.warning("Completa todos los campos")
 
-# ==================== REGISTRO DE UNIDADES ====================
+# ==================== REGISTRO DE UNIDADES (ADMIN) ====================
 elif menu == "📸 Registro de Unidades":
     st.markdown('<div class="main-header">📸 Registro Maestro de Unidades</div>', unsafe_allow_html=True)
     with st.form("reg_u"):
@@ -764,7 +979,7 @@ elif menu == "📸 Registro de Unidades":
             st.success("✅ Registro guardado correctamente")
             st.rerun()
 
-# ==================== GESTIÓN DE USUARIOS ====================
+# ==================== GESTIÓN DE USUARIOS (ADMIN) ====================
 elif menu == "👥 Gestión de Usuarios":
     st.markdown('<div class="main-header">👥 Usuarios del Sistema</div>', unsafe_allow_html=True)
     usuarios = execute_read("SELECT username, role FROM users ORDER BY role, username")

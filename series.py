@@ -95,7 +95,7 @@ DB_CONFIG = {
     "database": "carrier_db",
     "connect_timeout": 30,
     "autocommit": True,
-    "ssl": {"ssl_mode": "VERIFY_IDENTITY"},
+    "ssl": True,
     "cursorclass": pymysql.cursors.DictCursor,
 }
 
@@ -122,6 +122,7 @@ def query(sql, params=None, fetch=True):
         return res
     except Exception as e:
         st.error(f"Error SQL: {e}")
+        conn.close()
         return [] if fetch else False
 
 # ==================== INICIALIZAR TABLAS Y USUARIO ADMIN ====================

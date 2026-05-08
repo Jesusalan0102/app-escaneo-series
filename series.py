@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import pymysql
 import pymysql.cursors
@@ -376,159 +377,11 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] 
     stroke: white; stroke-width: 2.2; stroke-linecap: round;
 }}
 @media (min-width: 992px) {{ #sidebar-fab {{ display: none; }} }}
-
-/* ══ INDICADOR DE ACTUALIZACIÓN EN VIVO ══ */
-#live-indicator {{
-    position: fixed; bottom: 18px; right: 18px;
-    z-index: 99998; display: flex; align-items: center; gap: 8px;
-    background: rgba(255,255,255,0.95);
-    border: 1px solid #e2e8f2;
-    border-radius: 24px; padding: 6px 14px;
-    box-shadow: 0 4px 16px rgba(0,43,91,0.12);
-    font-family: 'Inter', sans-serif;
-    font-size: 0.75rem; font-weight: 600;
-    color: {CARRIER_BLUE};
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    transition: opacity 0.3s ease;
-    pointer-events: none;
-}}
-#live-dot {{
-    width: 8px; height: 8px; border-radius: 50%;
-    background: {CARRIER_SUCCESS};
-    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4);
-    animation: live-pulse 2s infinite;
-}}
-@keyframes live-pulse {{
-    0%   {{ box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }}
-    70%  {{ box-shadow: 0 0 0 8px rgba(22,163,74,0); }}
-    100% {{ box-shadow: 0 0 0 0 rgba(22,163,74,0); }}
-}}
-#live-label {{ letter-spacing: 0.3px; }}
-
-/* ══ TOAST DE ACTUALIZACIÓN ══ */
-#update-toast {{
-    position: fixed; bottom: 60px; right: 18px;
-    z-index: 99997; display: none;
-    background: {CARRIER_BLUE}; color: white;
-    border-radius: 12px; padding: 10px 18px;
-    font-family: 'Inter', sans-serif;
-    font-size: 0.8rem; font-weight: 600;
-    box-shadow: 0 6px 20px rgba(0,43,91,0.3);
-    animation: slideUp 0.3s ease;
-}}
-@keyframes slideUp {{
-    from {{ transform: translateY(10px); opacity: 0; }}
-    to   {{ transform: translateY(0);    opacity: 1; }}
-}}
-
-/* ══ ALERTA FLOTANTE DE TICKETS ══ */
-#ticket-alert-fab {{
-    position: fixed; top: 72px; right: 18px;
-    z-index: 99996; display: none;
-    background: linear-gradient(135deg, {CARRIER_DANGER} 0%, #b91c1c 100%);
-    color: white; border-radius: 16px;
-    padding: 14px 18px 14px 16px;
-    font-family: 'Inter', sans-serif;
-    box-shadow: 0 8px 28px rgba(220,38,38,0.45);
-    cursor: pointer; min-width: 240px; max-width: 320px;
-    border: 1px solid rgba(255,255,255,0.18);
-    backdrop-filter: blur(6px);
-    animation: ticketSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    position: fixed;
-}}
-#ticket-alert-fab:hover {{
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 12px 36px rgba(220,38,38,0.55);
-}}
-#ticket-alert-fab .taf-header {{
-    display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
-}}
-#ticket-alert-fab .taf-icon {{ font-size: 1.5rem; line-height: 1; flex-shrink: 0; }}
-#ticket-alert-fab .taf-title {{
-    font-size: 0.82rem; font-weight: 800;
-    letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.9;
-}}
-#ticket-alert-fab .taf-count {{
-    font-size: 2rem; font-weight: 900; line-height: 1;
-    display: block; margin-bottom: 2px;
-}}
-#ticket-alert-fab .taf-sub {{ font-size: 0.76rem; opacity: 0.85; font-weight: 500; }}
-#ticket-alert-fab .taf-close {{
-    position: absolute; top: 8px; right: 10px;
-    font-size: 1rem; opacity: 0.7; cursor: pointer;
-    line-height: 1; padding: 2px 4px; border-radius: 4px;
-    transition: opacity 0.2s; font-weight: 700;
-}}
-#ticket-alert-fab .taf-close:hover {{ opacity: 1; background: rgba(255,255,255,0.15); }}
-#ticket-alert-fab .taf-badge {{
-    display: inline-block; background: rgba(255,255,255,0.22);
-    border-radius: 20px; padding: 2px 10px; font-size: 0.72rem;
-    font-weight: 700; margin-top: 4px; letter-spacing: 0.3px;
-}}
-@keyframes ticketSlideIn {{
-    from {{ transform: translateX(120%); opacity: 0; }}
-    to   {{ transform: translateX(0);    opacity: 1; }}
-}}
-@keyframes ticketPulse {{
-    0%, 100% {{ box-shadow: 0 8px 28px rgba(220,38,38,0.45); }}
-    50%       {{ box-shadow: 0 8px 40px rgba(220,38,38,0.75); }}
-}}
-#ticket-alert-fab.pulsing {{ animation: ticketPulse 1.8s ease-in-out infinite; }}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ==================== SISTEMA DE ACTUALIZACIÓN EN VIVO ====================
-st.markdown("""
-<script>
-(function() {
-    // 1. Viewport meta — evita zoom al tocar inputs en Android
-    var meta = document.querySelector('meta[name="viewport"]');
-    if (!meta) {
-        meta = document.createElement('meta');
-        meta.name = 'viewport';
-        document.head.appendChild(meta);
-    }
-    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-
-    // 2. Touch polyfill para botones de Streamlit en WebView
-    function addTouchClick(el) {
-        if (el._ctTouchFixed) return;
-        el._ctTouchFixed = true;
-        el.addEventListener('touchend', function(e) {
-            e.preventDefault();
-            el.click();
-        }, { passive: false });
-    }
-
-    var obs = new MutationObserver(function(mutations) {
-        mutations.forEach(function(m) {
-            m.addedNodes.forEach(function(node) {
-                if (!node.querySelectorAll) return;
-                node.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
-            });
-        });
-        document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
-    });
-    obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
-    setTimeout(function() {
-        document.querySelectorAll('button, [role="button"]').forEach(addTouchClick);
-    }, 800);
-
-    // 3. Prevenir doble-tap zoom
-    var lastTap = 0;
-    document.addEventListener('touchend', function(e) {
-        var now = Date.now();
-        if (now - lastTap < 300) e.preventDefault();
-        lastTap = now;
-    }, { passive: false });
-})();
-</script>
-""", unsafe_allow_html=True)
-
-# Sidebar FAB + Indicadores
+# ==================== SIDEBAR FAB + COMPONENTES HTML ====================
 st.markdown("""
 <script>
 (function() {
@@ -590,27 +443,6 @@ st.markdown("""
     <line x1="3" y1="12" x2="21" y2="12"/>
     <line x1="3" y1="18" x2="21" y2="18"/>
   </svg>
-</div>
-
-<!-- Indicador LED en vivo -->
-<div id="live-indicator">
-    <div id="live-dot"></div>
-    <span id="live-label">En vivo</span>
-</div>
-
-<!-- Toast de actualización -->
-<div id="update-toast">🔄 Datos actualizados</div>
-
-<!-- Alerta flotante de tickets no atendidos -->
-<div id="ticket-alert-fab" style="display:none;" onclick="window.__TAF_CLICK__&&window.__TAF_CLICK__()">
-  <span class="taf-close" onclick="event.stopPropagation();window.__TAF_CLOSE__&&window.__TAF_CLOSE__()">✕</span>
-  <div class="taf-header">
-    <span class="taf-icon">🎫</span>
-    <span class="taf-title">Tickets sin atender</span>
-  </div>
-  <span class="taf-count" id="taf-count-num">0</span>
-  <div class="taf-sub">ticket(s) requieren atención inmediata</div>
-  <div class="taf-badge">Toca para ir a Tickets →</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -979,207 +811,199 @@ if not st.session_state.login:
     st.stop()
 
 
-# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
+# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO (iframe) ====================
 if st.session_state.get("login"):
-
     _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
+    _tickets_pendientes = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
 
+    # Elementos ocultos para que el iframe los lea sin recargar la página
     st.markdown(
         f"""
-    <script>
-    (function () {{
-        try {{
-            var _u = new URLSearchParams(window.location.search).get('u');
-            var _r = new URLSearchParams(window.location.search).get('r');
-            var _m = new URLSearchParams(window.location.search).get('m');
-            if (_u) localStorage.setItem('ct_user', _u);
-            if (_r) localStorage.setItem('ct_role', _r);
-            if (_m) localStorage.setItem('ct_menu', _m);
-        }} catch(e) {{}}
+        <span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>
+        <span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        if (window.__CT_ENGINE_STARTED__) return;
-        window.__CT_ENGINE_STARTED__ = true;
-
-        window.__CT_LAST_COUNT__ = {_sols_count};
-
-        var TZ = 'America/Tijuana';
-
-        function fmtTime(d) {{
-            try {{
-                return d.toLocaleTimeString("es-MX", {{
-                    timeZone: TZ, hour: "2-digit", minute: "2-digit",
-                    second: "2-digit", hour12: false
-                }});
-            }} catch(e) {{
-                var p = function(n){{ return String(n).padStart(2,'0'); }};
-                return p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds());
+    # Componente iframe con el reloj, LED, heartbeat, toast y alerta de tickets
+    components.html(
+        f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{ margin: 0; padding: 0; background: transparent; font-family: 'Inter', sans-serif; }}
+            #live-indicator {{
+                position: fixed; bottom: 18px; right: 18px;
+                display: flex; align-items: center; gap: 8px;
+                background: rgba(255,255,255,0.95);
+                border: 1px solid #e2e8f2;
+                border-radius: 24px; padding: 6px 14px;
+                box-shadow: 0 4px 16px rgba(0,43,91,0.12);
+                font-size: 0.75rem; font-weight: 600;
+                color: #002B5B;
+                backdrop-filter: blur(8px);
+                pointer-events: none;
+                z-index: 99998;
             }}
-        }}
-        function fmtDate(d) {{
-            try {{
-                var s = d.toLocaleDateString("es-MX", {{
-                    timeZone: TZ, year:"numeric", month:"2-digit", day:"2-digit"
-                }});
-                var p = s.split("/");
-                return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
-            }} catch(e) {{ return d.toISOString().slice(0,10); }}
-        }}
-
-        function updateClocks() {{
-            var now = new Date();
-            var t   = fmtTime(now);
-            var dt  = fmtDate(now);
-            var sb  = document.getElementById('__sb_clock__');
-            var hd  = document.getElementById('__hd_clock__');
-            if (sb) {{
-                sb.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
+            #live-dot {{
+                width: 8px; height: 8px; border-radius: 50%;
+                background: #16a34a;
+                box-shadow: 0 0 0 0 rgba(22,163,74,0.4);
+                animation: live-pulse 2s infinite;
             }}
-            if (hd) {{
-                hd.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
+            @keyframes live-pulse {{
+                0% {{ box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }}
+                70% {{ box-shadow: 0 0 0 8px rgba(22,163,74,0); }}
+                100% {{ box-shadow: 0 0 0 0 rgba(22,163,74,0); }}
             }}
-        }}
-
-        updateClocks();
-        var clockInterval = setInterval(updateClocks, 1000);
-
-        // MutationObserver: si Streamlit recrea los elementos, los actualizamos de inmediato
-        var observer = new MutationObserver(function(mutations) {{
-            var now = new Date();
-            var t = fmtTime(now);
-            var dt = fmtDate(now);
-            mutations.forEach(function(m) {{
-                m.addedNodes.forEach(function(node) {{
-                    if (node.id === '__sb_clock__') {{
-                        node.innerHTML = '&#x1F552; <b>' + t + '</b> &nbsp;&middot;&nbsp; ' + dt;
-                    }}
-                    if (node.id === '__hd_clock__') {{
-                        node.textContent = String.fromCodePoint(0x1F552) + ' Tijuana: ' + t;
-                    }}
-                }});
-            }});
-        }});
-        observer.observe(document.body, {{ childList: true, subtree: true }});
-
-        // Supervisor de vida: si el reloj se congela, lo reanimamos
-        var lastClockCheck = Date.now();
-        setInterval(function() {{
-            var now = Date.now();
-            if (now - lastClockCheck > 3000) {{
-                updateClocks();
+            #update-toast {{
+                position: fixed; bottom: 60px; right: 18px;
+                z-index: 99997; display: none;
+                background: #002B5B; color: white;
+                border-radius: 12px; padding: 10px 18px;
+                font-size: 0.8rem; font-weight: 600;
+                box-shadow: 0 6px 20px rgba(0,43,91,0.3);
+                animation: slideUp 0.3s ease;
+                pointer-events: none;
             }}
-            lastClockCheck = now;
-        }}, 5000);
+            @keyframes slideUp {{
+                from {{ transform: translateY(10px); opacity: 0; }}
+                to   {{ transform: translateY(0); opacity: 1; }}
+            }}
+            #ticket-alert-fab {{
+                position: fixed; top: 72px; right: 18px;
+                z-index: 99996; display: none;
+                background: linear-gradient(135deg, #dc2626, #b91c1c);
+                color: white; border-radius: 16px;
+                padding: 14px 18px; font-size: 0.82rem;
+                box-shadow: 0 8px 28px rgba(220,38,38,0.45);
+                cursor: pointer; min-width: 240px;
+                border: 1px solid rgba(255,255,255,0.18);
+                backdrop-filter: blur(6px);
+            }}
+            #ticket-alert-fab .taf-close {{
+                position: absolute; top: 8px; right: 10px;
+                cursor: pointer; font-weight: 700;
+            }}
+            #sb-clock {{
+                position: fixed; top: 18px; left: 230px;
+                color: white; font-size: 0.82rem; font-weight: 600;
+                background: rgba(0,43,91,0.7);
+                padding: 4px 12px; border-radius: 20px;
+                z-index: 99995;
+                pointer-events: none;
+            }}
+        </style>
+        </head>
+        <body>
+            <div id="sb-clock"></div>
+            <div id="live-indicator">
+                <div id="live-dot"></div>
+                <span>En vivo</span>
+            </div>
+            <div id="update-toast"></div>
+            <div id="ticket-alert-fab">
+                <span class="taf-close" onclick="this.parentElement.style.display='none'">✕</span>
+                <span id="ticket-count"></span>
+            </div>
 
-        // Heartbeat – LED en vivo
-        var dot = document.getElementById('live-dot');
-        function pingHeartbeat() {{
-            fetch('/_stcore/health', {{ cache: 'no-store' }})
-                .then(function(r) {{
-                    if (dot) {{
-                        dot.style.background = r.ok ? '#16a34a' : '#dc2626';
-                    }}
-                }})
-                .catch(function() {{
-                    if (dot) dot.style.background = '#dc2626';
-                }});
-        }}
-        setInterval(pingHeartbeat, 25000);
-        pingHeartbeat();
+            <script>
+                var TZ = 'America/Tijuana';
+                var SOUND_URL = '{SOUND_URL}';
+                var lastSolsCount = {_sols_count};
 
-        function showToast(msg) {{
-            var toast = document.getElementById('update-toast');
-            if (!toast) return;
-            toast.textContent = msg;
-            toast.style.display = 'block';
-            setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
-        }}
-
-        function getCurrentCount() {{
-            var el = document.getElementById('__ct_sol_count__');
-            if (!el) return null;
-            return parseInt(el.getAttribute('data-count') || '0', 10);
-        }}
-
-        function pollData() {{
-            var current = getCurrentCount();
-            if (current === null) return;
-            if (current !== window.__CT_LAST_COUNT__) {{
-                var delta = current - window.__CT_LAST_COUNT__;
-                window.__CT_LAST_COUNT__ = current;
-                if (delta > 0) {{
-                    showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
+                function fmtTime(d) {{
                     try {{
-                        var audio = new Audio('{SOUND_URL}');
-                        audio.play().catch(function(){{}});
-                    }} catch(e) {{}}
-                }} else {{
-                    showToast('🔄 Datos actualizados');
+                        return d.toLocaleTimeString("es-MX", {{ timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }});
+                    }} catch(e) {{
+                        var p = function(n){{ return String(n).padStart(2,'0'); }};
+                        return p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds());
+                    }}
                 }}
-            }}
-        }}
-
-        function getTicketCount() {{
-            var el = document.getElementById('__ct_ticket_count__');
-            if (!el) return 0;
-            return parseInt(el.getAttribute('data-count') || '0', 10);
-        }}
-
-        function updateTicketAlert() {{
-            var count = getTicketCount();
-            var fab   = document.getElementById('ticket-alert-fab');
-            var num   = document.getElementById('taf-count-num');
-            if (!fab) return;
-            if (count > 0) {{
-                if (num) num.textContent = count;
-                fab.style.display = 'block';
-                fab.classList.add('pulsing');
-            }} else {{
-                fab.style.display = 'none';
-                fab.classList.remove('pulsing');
-            }}
-        }}
-
-        window.__TAF_CLOSE__ = function() {{
-            var fab = document.getElementById('ticket-alert-fab');
-            if (fab) {{
-                fab.style.animation = 'none';
-                fab.style.transform = 'translateX(120%)';
-                fab.style.opacity = '0';
-                fab.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-                setTimeout(function() {{ fab.style.display = 'none'; }}, 300);
-            }}
-        }};
-
-        window.__TAF_CLICK__ = function() {{
-            var radios = document.querySelectorAll('[data-testid="stRadio"] input[type="radio"]');
-            radios.forEach(function(r) {{
-                var lbl = r.closest('label');
-                if (lbl && lbl.textContent && lbl.textContent.indexOf('Ticket') !== -1) {{
-                    r.click();
+                function fmtDate(d) {{
+                    try {{
+                        var s = d.toLocaleDateString("es-MX", {{ timeZone: TZ, year:"numeric", month:"2-digit", day:"2-digit" }});
+                        var p = s.split("/");
+                        return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
+                    }} catch(e) {{ return d.toISOString().slice(0,10); }}
                 }}
-            }});
-            window.__TAF_CLOSE__();
-        }};
 
-        setTimeout(updateTicketAlert, 800);
-        setInterval(updateTicketAlert, 30000);
-        setInterval(pollData, 30000);
+                function updateClock() {{
+                    var now = new Date();
+                    var t = fmtTime(now);
+                    var dt = fmtDate(now);
+                    var sb = document.getElementById('sb-clock');
+                    if (sb) {{
+                        sb.textContent = '🕒 ' + t + ' · ' + dt;
+                    }}
+                    var hd = window.parent.document.getElementById('__hd_clock__');
+                    if (hd) {{
+                        hd.textContent = '🕒 Tijuana: ' + t;
+                    }}
+                }}
+                setInterval(updateClock, 1000);
+                updateClock();
 
-    }})();
-    </script>
-    """,
-        unsafe_allow_html=True,
-    )
+                var dot = document.getElementById('live-dot');
+                function pingHeartbeat() {{
+                    fetch('/_stcore/health', {{ cache: 'no-store' }})
+                        .then(function(r) {{
+                            if (dot) dot.style.background = r.ok ? '#16a34a' : '#dc2626';
+                        }})
+                        .catch(function() {{
+                            if (dot) dot.style.background = '#dc2626';
+                        }});
+                }}
+                setInterval(pingHeartbeat, 25000);
+                pingHeartbeat();
 
-    st.markdown(
-        f'<span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>',
-        unsafe_allow_html=True,
-    )
+                function showToast(msg) {{
+                    var toast = document.getElementById('update-toast');
+                    if (!toast) return;
+                    toast.textContent = msg;
+                    toast.style.display = 'block';
+                    setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
+                }}
 
-    _tickets_pendientes = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
-    st.markdown(
-        f'<span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>',
-        unsafe_allow_html=True,
+                function pollData() {{
+                    var solEl = window.parent.document.getElementById('__ct_sol_count__');
+                    if (!solEl) return;
+                    var current = parseInt(solEl.getAttribute('data-count') || '0', 10);
+                    if (current !== lastSolsCount) {{
+                        if (current > lastSolsCount) {{
+                            showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
+                            try {{
+                                var audio = new Audio(SOUND_URL);
+                                audio.play().catch(function(){{}});
+                            }} catch(e) {{}}
+                        }} else {{
+                            showToast('🔄 Datos actualizados');
+                        }}
+                        lastSolsCount = current;
+                    }}
+
+                    var ticketEl = window.parent.document.getElementById('__ct_ticket_count__');
+                    if (ticketEl) {{
+                        var count = parseInt(ticketEl.getAttribute('data-count') || '0', 10);
+                        var fab = document.getElementById('ticket-alert-fab');
+                        if (count > 0) {{
+                            document.getElementById('ticket-count').textContent = '🎫 ' + count + ' ticket(s) sin atender';
+                            fab.style.display = 'block';
+                        }} else {{
+                            fab.style.display = 'none';
+                        }}
+                    }}
+                }}
+                setInterval(pollData, 30000);
+                pollData();
+            </script>
+        </body>
+        </html>
+        """,
+        height=0,
     )
 
 
@@ -1188,8 +1012,7 @@ with st.sidebar:
     st.image(LOGO_DATA_URI, width=210)
 
     st.markdown(
-        f"<p id='__sb_clock__' style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;'>"
-        f"🕒 <b>{hora_actual}</b> &nbsp;·&nbsp; {fecha_hoy}</p>",
+        "<p style='margin:8px 0 2px;font-size:.82rem;color:#c3d4f0;padding-left:4px;' id='__sb_clock_container__'></p>",
         unsafe_allow_html=True,
     )
     st.markdown("---")

@@ -95,14 +95,20 @@ DB_CONFIG = {
     "connection_timeout": 30,
     "autocommit": True,
     "use_pure": True,
+    "ssl_disabled": False,
+    "ssl_verify_cert": False,
+    "ssl_verify_identity": False,
 }
 
 def get_connection():
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         return conn
+    except mysql.connector.Error as e:
+        st.error(f"Error de conexión MySQL [{e.errno}]: {e.msg}")
+        return None
     except Exception as e:
-        st.error(f"Error de conexión: {e}")
+        st.error(f"Error de conexión inesperado: {type(e).__name__}: {e}")
         return None
 
 def query(sql, params=None, fetch=True):

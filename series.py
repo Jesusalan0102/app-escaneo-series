@@ -811,200 +811,254 @@ if not st.session_state.login:
     st.stop()
 
 
-# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO (iframe) ====================
-if st.session_state.get("login"):
-    _sols_count = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
-    _tickets_pendientes = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
+# ==================== MOTOR DE ACTUALIZACIÓN EN VIVO ====================
+# El reloj de Tijuana corre 100% en JavaScript del lado del cliente (sin recargas).
+# Los conteos de BD se actualizan cada 30s usando st.fragment(run_every=30)
+# sin recargar la página completa.
 
-    # Elementos ocultos para que el iframe los lea sin recargar la página
-    st.markdown(
-        f"""
-        <span id="__ct_sol_count__" data-count="{_sols_count}" style="display:none"></span>
-        <span id="__ct_ticket_count__" data-count="{_tickets_pendientes}" style="display:none"></span>
-        """,
-        unsafe_allow_html=True,
-    )
+# ── Inyectar el reloj + overlays en el DOM padre via postMessage ──────────
+components.html(
+    f"""
+    <!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <style>
+        body {{ margin:0; padding:0; overflow:hidden; }}
+    </style>
+    </head>
+    <body>
+    <script>
+    (function() {{
+        var TZ = 'America/Tijuana';
+        var SOUND_URL = '{SOUND_URL}';
 
-    # Componente iframe con el reloj, LED, heartbeat, toast y alerta de tickets
+        /* ── helpers de formato ── */
+        function fmtTime(d) {{
+            try {{
+                return d.toLocaleTimeString("es-MX", {{
+                    timeZone: TZ, hour:"2-digit", minute:"2-digit",
+                    second:"2-digit", hour12: false
+                }});
+            }} catch(e) {{
+                var p = function(n){{ return String(n).padStart(2,'0'); }};
+                var o = -7*60; // UTC-7 Tijuana (PST)
+                var u = d.getTime() + (d.getTimezoneOffset() + o)*60000;
+                var td = new Date(u);
+                return p(td.getHours())+":"+p(td.getMinutes())+":"+p(td.getSeconds());
+            }}
+        }}
+        function fmtDate(d) {{
+            try {{
+                var s = d.toLocaleDateString("es-MX", {{
+                    timeZone: TZ, year:"numeric", month:"2-digit", day:"2-digit"
+                }});
+                var p = s.split("/");
+                return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
+            }} catch(e) {{ return d.toISOString().slice(0,10); }}
+        }}
+
+        /* ── inyectar overlays en el padre una sola vez ── */
+        function injectOverlays() {{
+            var pd = window.parent.document;
+            if (pd.getElementById('__ct_clock_overlay__')) return; // ya existe
+
+            /* Reloj flotante */
+            var clk = pd.createElement('div');
+            clk.id = '__ct_clock_overlay__';
+            clk.style.cssText = [
+                'position:fixed','top:14px','left:50%','transform:translateX(-50%)',
+                'background:rgba(0,43,91,0.82)','color:#fff',
+                'font-size:0.83rem','font-weight:700',
+                'padding:5px 16px','border-radius:22px',
+                'box-shadow:0 2px 10px rgba(0,43,91,0.35)',
+                'z-index:999999','pointer-events:none',
+                'font-family:Inter,sans-serif','letter-spacing:0.3px',
+                'backdrop-filter:blur(6px)'
+            ].join(';');
+            pd.body.appendChild(clk);
+
+            /* LED "En vivo" */
+            var led = pd.createElement('div');
+            led.id = '__ct_led_overlay__';
+            led.innerHTML = '<span id="__ct_led_dot__" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a;margin-right:6px;vertical-align:middle;animation:ct-pulse 2s infinite;"></span><span>En vivo</span>';
+            led.style.cssText = [
+                'position:fixed','bottom:18px','right:18px',
+                'display:flex','align-items:center',
+                'background:rgba(255,255,255,0.95)','border:1px solid #e2e8f2',
+                'border-radius:24px','padding:6px 14px',
+                'box-shadow:0 4px 16px rgba(0,43,91,0.12)',
+                'font-size:0.75rem','font-weight:600','color:#002B5B',
+                'backdrop-filter:blur(8px)','pointer-events:none',
+                'z-index:99998','font-family:Inter,sans-serif'
+            ].join(';');
+            pd.body.appendChild(led);
+
+            /* Toast */
+            var toast = pd.createElement('div');
+            toast.id = '__ct_toast_overlay__';
+            toast.style.cssText = [
+                'position:fixed','bottom:60px','right:18px',
+                'z-index:99997','display:none',
+                'background:#002B5B','color:white',
+                'border-radius:12px','padding:10px 18px',
+                'font-size:0.8rem','font-weight:600',
+                'box-shadow:0 6px 20px rgba(0,43,91,0.3)',
+                'pointer-events:none','font-family:Inter,sans-serif'
+            ].join(';');
+            pd.body.appendChild(toast);
+
+            /* FAB tickets */
+            var fab = pd.createElement('div');
+            fab.id = '__ct_ticket_fab__';
+            fab.innerHTML = '<span id="__ct_ticket_txt__"></span><span style="position:absolute;top:8px;right:10px;cursor:pointer;font-weight:700;" onclick="this.parentElement.style.display=\'none\'">✕</span>';
+            fab.style.cssText = [
+                'position:fixed','top:72px','right:18px',
+                'z-index:99996','display:none',
+                'background:linear-gradient(135deg,#dc2626,#b91c1c)',
+                'color:white','border-radius:16px',
+                'padding:14px 18px','font-size:0.82rem',
+                'box-shadow:0 8px 28px rgba(220,38,38,0.45)',
+                'cursor:pointer','min-width:240px',
+                'border:1px solid rgba(255,255,255,0.18)',
+                'font-family:Inter,sans-serif'
+            ].join(';');
+            pd.body.appendChild(fab);
+
+            /* Animación CSS del LED */
+            if (!pd.getElementById('__ct_styles__')) {{
+                var s = pd.createElement('style');
+                s.id = '__ct_styles__';
+                s.textContent = '@keyframes ct-pulse{{0%{{box-shadow:0 0 0 0 rgba(22,163,74,.4)}}70%{{box-shadow:0 0 0 8px rgba(22,163,74,0)}}100%{{box-shadow:0 0 0 0 rgba(22,163,74,0)}}}}';
+                pd.head.appendChild(s);
+            }}
+        }}
+
+        /* ── reloj: tick cada segundo ── */
+        var lastSolsCount = -1;  /* se inicializa al recibir el primer ct_counts */
+
+        function tickClock() {{
+            try {{ injectOverlays(); }} catch(e) {{}}
+            var pd = window.parent.document;
+            var now = new Date();
+            var t  = fmtTime(now);
+            var dt = fmtDate(now);
+
+            /* Reloj flotante central */
+            var clk = pd.getElementById('__ct_clock_overlay__');
+            if (clk) clk.textContent = '🕒 Tijuana  ' + t + '  ·  ' + dt;
+
+            /* Badge en el Dashboard (si existe) */
+            var hd = pd.getElementById('__hd_clock__');
+            if (hd) hd.textContent = '🕒 Tijuana: ' + t;
+
+            /* Reloj en sidebar container (si existe) */
+            var sc = pd.getElementById('__sb_clock_container__');
+            if (sc) sc.textContent = '🕒 ' + t + '  ' + dt;
+        }}
+        setInterval(tickClock, 1000);
+        tickClock();
+
+        /* ── heartbeat LED ── */
+        function pingHeartbeat() {{
+            fetch('/_stcore/health', {{ cache: 'no-store' }})
+                .then(function(r) {{
+                    try {{
+                        var dot = window.parent.document.getElementById('__ct_led_dot__');
+                        if (dot) dot.style.background = r.ok ? '#16a34a' : '#dc2626';
+                    }} catch(e) {{}}
+                }})
+                .catch(function() {{
+                    try {{
+                        var dot = window.parent.document.getElementById('__ct_led_dot__');
+                        if (dot) dot.style.background = '#dc2626';
+                    }} catch(e) {{}}
+                }});
+        }}
+        setInterval(pingHeartbeat, 25000);
+        pingHeartbeat();
+
+        /* ── toast helper ── */
+        function showToast(msg) {{
+            try {{
+                var toast = window.parent.document.getElementById('__ct_toast_overlay__');
+                if (!toast) return;
+                toast.textContent = msg;
+                toast.style.display = 'block';
+                setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
+            }} catch(e) {{}}
+        }}
+
+        /* ── escuchar mensajes del fragment de Streamlit ── */
+        window.addEventListener('message', function(ev) {{
+            if (!ev.data || ev.data.type !== 'ct_counts') return;
+            var sols   = ev.data.sols   || 0;
+            var tickets = ev.data.tickets || 0;
+
+            /* Notificación de nuevas solicitudes */
+            if (sols > lastSolsCount) {{
+                showToast('🔔 ' + sols + ' solicitud(es) nueva(s)');
+                try {{
+                    var audio = new Audio(SOUND_URL);
+                    audio.play().catch(function(){{}});
+                }} catch(e) {{}}
+            }} else if (sols !== lastSolsCount) {{
+                showToast('🔄 Datos actualizados');
+            }}
+            lastSolsCount = sols;
+
+            /* FAB de tickets */
+            try {{
+                var fab = window.parent.document.getElementById('__ct_ticket_fab__');
+                var txt = window.parent.document.getElementById('__ct_ticket_txt__');
+                if (fab && txt) {{
+                    if (tickets > 0) {{
+                        txt.textContent = '🎫 ' + tickets + ' ticket(s) sin atender';
+                        fab.style.display = 'block';
+                    }} else {{
+                        fab.style.display = 'none';
+                    }}
+                }}
+            }} catch(e) {{}}
+        }});
+
+    }})();
+    </script>
+    </body></html>
+    """,
+    height=0,
+    key="__ct_live_engine__",
+)
+
+
+# ── Fragment que actualiza conteos de BD cada 30 s SIN recargar la página ─
+@st.fragment(run_every=30)
+def _live_counts_fragment():
+    """Consulta la BD silenciosamente y envía los conteos al iframe via JS."""
+    _sols    = len(execute_read("SELECT id FROM asignaciones WHERE estado='solicitado'"))
+    _tickets = len(execute_read("SELECT id FROM tickets WHERE atendido=FALSE"))
+    # Enviar al iframe que tiene el motor JS (usando postMessage dentro del mismo origen)
     components.html(
         f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            body {{ margin: 0; padding: 0; background: transparent; font-family: 'Inter', sans-serif; }}
-            #live-indicator {{
-                position: fixed; bottom: 18px; right: 18px;
-                display: flex; align-items: center; gap: 8px;
-                background: rgba(255,255,255,0.95);
-                border: 1px solid #e2e8f2;
-                border-radius: 24px; padding: 6px 14px;
-                box-shadow: 0 4px 16px rgba(0,43,91,0.12);
-                font-size: 0.75rem; font-weight: 600;
-                color: #002B5B;
-                backdrop-filter: blur(8px);
-                pointer-events: none;
-                z-index: 99998;
+        <script>
+        (function(){{
+            // Buscar el iframe del motor y enviarle los conteos actualizados
+            var frames = window.parent.frames;
+            for (var i = 0; i < frames.length; i++) {{
+                try {{
+                    frames[i].postMessage(
+                        {{type:'ct_counts', sols:{_sols}, tickets:{_tickets}}},
+                        '*'
+                    );
+                }} catch(e) {{}}
             }}
-            #live-dot {{
-                width: 8px; height: 8px; border-radius: 50%;
-                background: #16a34a;
-                box-shadow: 0 0 0 0 rgba(22,163,74,0.4);
-                animation: live-pulse 2s infinite;
-            }}
-            @keyframes live-pulse {{
-                0% {{ box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }}
-                70% {{ box-shadow: 0 0 0 8px rgba(22,163,74,0); }}
-                100% {{ box-shadow: 0 0 0 0 rgba(22,163,74,0); }}
-            }}
-            #update-toast {{
-                position: fixed; bottom: 60px; right: 18px;
-                z-index: 99997; display: none;
-                background: #002B5B; color: white;
-                border-radius: 12px; padding: 10px 18px;
-                font-size: 0.8rem; font-weight: 600;
-                box-shadow: 0 6px 20px rgba(0,43,91,0.3);
-                animation: slideUp 0.3s ease;
-                pointer-events: none;
-            }}
-            @keyframes slideUp {{
-                from {{ transform: translateY(10px); opacity: 0; }}
-                to   {{ transform: translateY(0); opacity: 1; }}
-            }}
-            #ticket-alert-fab {{
-                position: fixed; top: 72px; right: 18px;
-                z-index: 99996; display: none;
-                background: linear-gradient(135deg, #dc2626, #b91c1c);
-                color: white; border-radius: 16px;
-                padding: 14px 18px; font-size: 0.82rem;
-                box-shadow: 0 8px 28px rgba(220,38,38,0.45);
-                cursor: pointer; min-width: 240px;
-                border: 1px solid rgba(255,255,255,0.18);
-                backdrop-filter: blur(6px);
-            }}
-            #ticket-alert-fab .taf-close {{
-                position: absolute; top: 8px; right: 10px;
-                cursor: pointer; font-weight: 700;
-            }}
-            #sb-clock {{
-                position: fixed; top: 18px; left: 230px;
-                color: white; font-size: 0.82rem; font-weight: 600;
-                background: rgba(0,43,91,0.7);
-                padding: 4px 12px; border-radius: 20px;
-                z-index: 99995;
-                pointer-events: none;
-            }}
-        </style>
-        </head>
-        <body>
-            <div id="sb-clock"></div>
-            <div id="live-indicator">
-                <div id="live-dot"></div>
-                <span>En vivo</span>
-            </div>
-            <div id="update-toast"></div>
-            <div id="ticket-alert-fab">
-                <span class="taf-close" onclick="this.parentElement.style.display='none'">✕</span>
-                <span id="ticket-count"></span>
-            </div>
-
-            <script>
-                var TZ = 'America/Tijuana';
-                var SOUND_URL = '{SOUND_URL}';
-                var lastSolsCount = {_sols_count};
-
-                function fmtTime(d) {{
-                    try {{
-                        return d.toLocaleTimeString("es-MX", {{ timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }});
-                    }} catch(e) {{
-                        var p = function(n){{ return String(n).padStart(2,'0'); }};
-                        return p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds());
-                    }}
-                }}
-                function fmtDate(d) {{
-                    try {{
-                        var s = d.toLocaleDateString("es-MX", {{ timeZone: TZ, year:"numeric", month:"2-digit", day:"2-digit" }});
-                        var p = s.split("/");
-                        return (p.length===3) ? p[2]+"-"+p[1]+"-"+p[0] : s;
-                    }} catch(e) {{ return d.toISOString().slice(0,10); }}
-                }}
-
-                function updateClock() {{
-                    var now = new Date();
-                    var t = fmtTime(now);
-                    var dt = fmtDate(now);
-                    var sb = document.getElementById('sb-clock');
-                    if (sb) {{
-                        sb.textContent = '🕒 ' + t + ' · ' + dt;
-                    }}
-                    var hd = window.parent.document.getElementById('__hd_clock__');
-                    if (hd) {{
-                        hd.textContent = '🕒 Tijuana: ' + t;
-                    }}
-                }}
-                setInterval(updateClock, 1000);
-                updateClock();
-
-                var dot = document.getElementById('live-dot');
-                function pingHeartbeat() {{
-                    fetch('/_stcore/health', {{ cache: 'no-store' }})
-                        .then(function(r) {{
-                            if (dot) dot.style.background = r.ok ? '#16a34a' : '#dc2626';
-                        }})
-                        .catch(function() {{
-                            if (dot) dot.style.background = '#dc2626';
-                        }});
-                }}
-                setInterval(pingHeartbeat, 25000);
-                pingHeartbeat();
-
-                function showToast(msg) {{
-                    var toast = document.getElementById('update-toast');
-                    if (!toast) return;
-                    toast.textContent = msg;
-                    toast.style.display = 'block';
-                    setTimeout(function() {{ toast.style.display = 'none'; }}, 3200);
-                }}
-
-                function pollData() {{
-                    var solEl = window.parent.document.getElementById('__ct_sol_count__');
-                    if (!solEl) return;
-                    var current = parseInt(solEl.getAttribute('data-count') || '0', 10);
-                    if (current !== lastSolsCount) {{
-                        if (current > lastSolsCount) {{
-                            showToast('🔔 ' + current + ' solicitud(es) nueva(s)');
-                            try {{
-                                var audio = new Audio(SOUND_URL);
-                                audio.play().catch(function(){{}});
-                            }} catch(e) {{}}
-                        }} else {{
-                            showToast('🔄 Datos actualizados');
-                        }}
-                        lastSolsCount = current;
-                    }}
-
-                    var ticketEl = window.parent.document.getElementById('__ct_ticket_count__');
-                    if (ticketEl) {{
-                        var count = parseInt(ticketEl.getAttribute('data-count') || '0', 10);
-                        var fab = document.getElementById('ticket-alert-fab');
-                        if (count > 0) {{
-                            document.getElementById('ticket-count').textContent = '🎫 ' + count + ' ticket(s) sin atender';
-                            fab.style.display = 'block';
-                        }} else {{
-                            fab.style.display = 'none';
-                        }}
-                    }}
-                }}
-                setInterval(pollData, 30000);
-                pollData();
-            </script>
-        </body>
-        </html>
+        }})();
+        </script>
         """,
         height=0,
+        key=f"__ct_counts_{_sols}_{_tickets}__",
     )
+
+if st.session_state.get("login"):
+    _live_counts_fragment()
 
 
 # ==================== SIDEBAR ====================

@@ -264,6 +264,32 @@ def init_db():
             query("INSERT INTO toma_valores_campos (campo_nombre, campo_orden) VALUES (%s, %s)", (nom, ord), fetch=False)
 
 init_db()
+# ===== DIAGNÓSTICO TEMPORAL - BORRAR DESPUÉS =====
+import ssl
+with st.expander("🔧 Diagnóstico de conexión"):
+    if st.button("Probar conexión"):
+        try:
+            import mysql.connector
+            conn = mysql.connector.connect(
+                host="gateway01.us-east-1.prod.aws.tidbcloud.com",
+                port=4000,
+                user="4BgYs96t9XXhCMS.root",
+                password="YZcSUhQ5H7Gx9vLk",
+                database="carrier_db",
+                ssl_disabled=False,
+                ssl_verify_cert=False,
+                ssl_verify_identity=False,
+                connection_timeout=30,
+            )
+            st.success("✅ Conexión exitosa")
+            cur = conn.cursor()
+            cur.execute("SELECT username, role FROM users")
+            rows = cur.fetchall()
+            st.write("Usuarios en BD:", rows)
+            conn.close()
+        except Exception as e:
+            st.error(f"❌ Error exacto: {type(e).__name__}: {e}")
+# ===== FIN DIAGNÓSTICO =====
 
 # ==================== ESTADO DE SESIÓN ====================
 if 'login' not in st.session_state: st.session_state.login = False

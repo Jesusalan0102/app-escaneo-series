@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import mysql.connector
+import pymysql
+import pymysql.cursors
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
@@ -92,23 +93,18 @@ DB_CONFIG = {
     "user": "4BgYs96t9XXhCMS.root",
     "password": "YZcSUhQ5H7Gx9vLk",
     "database": "carrier_db",
-    "connection_timeout": 30,
+    "connect_timeout": 30,
     "autocommit": True,
-    "use_pure": True,
-    "ssl_disabled": False,
-    "ssl_verify_cert": False,
-    "ssl_verify_identity": False,
+    "ssl": {"ssl_mode": "VERIFY_IDENTITY"},
+    "cursorclass": pymysql.cursors.DictCursor,
 }
 
 def get_connection():
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
+        conn = pymysql.connect(**DB_CONFIG)
         return conn
-    except mysql.connector.Error as e:
-        st.error(f"Error de conexión MySQL [{e.errno}]: {e.msg}")
-        return None
     except Exception as e:
-        st.error(f"Error de conexión inesperado: {type(e).__name__}: {e}")
+        st.error(f"Error de conexión: {type(e).__name__}: {e}")
         return None
 
 def query(sql, params=None, fetch=True):
@@ -116,13 +112,12 @@ def query(sql, params=None, fetch=True):
     if not conn:
         return [] if fetch else False
     try:
-        cur = conn.cursor(dictionary=True)
-        cur.execute(sql, params or ())
-        if fetch:
-            res = cur.fetchall()
-        else:
-            res = True
-        cur.close()
+        with conn.cursor() as cur:
+            cur.execute(sql, params or ())
+            if fetch:
+                res = cur.fetchall()
+            else:
+                res = True
         conn.close()
         return res
     except Exception as e:
@@ -264,32 +259,6 @@ def init_db():
             query("INSERT INTO toma_valores_campos (campo_nombre, campo_orden) VALUES (%s, %s)", (nom, ord), fetch=False)
 
 init_db()
-# ===== DIAGNÓSTICO TEMPORAL - BORRAR DESPUÉS =====
-import ssl
-with st.expander("🔧 Diagnóstico de conexión"):
-    if st.button("Probar conexión"):
-        try:
-            import mysql.connector
-            conn = mysql.connector.connect(
-                host="gateway01.us-east-1.prod.aws.tidbcloud.com",
-                port=4000,
-                user="4BgYs96t9XXhCMS.root",
-                password="YZcSUhQ5H7Gx9vLk",
-                database="carrier_db",
-                ssl_disabled=False,
-                ssl_verify_cert=False,
-                ssl_verify_identity=False,
-                connection_timeout=30,
-            )
-            st.success("✅ Conexión exitosa")
-            cur = conn.cursor()
-            cur.execute("SELECT username, role FROM users")
-            rows = cur.fetchall()
-            st.write("Usuarios en BD:", rows)
-            conn.close()
-        except Exception as e:
-            st.error(f"❌ Error exacto: {type(e).__name__}: {e}")
-# ===== FIN DIAGNÓSTICO =====
 
 # ==================== ESTADO DE SESIÓN ====================
 if 'login' not in st.session_state: st.session_state.login = False

@@ -2045,6 +2045,9 @@ elif menu == "🔔 Nueva Solicitud":
 # ═══════════════════════════════════════════════════════════════
 # ==================== MIS TICKETS (Técnico) ====================
 # ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ==================== MIS TICKETS (Técnico) ====================
+# ═══════════════════════════════════════════════════════════════
 elif menu == "🎫 Mis Tickets":
     st.markdown('<div class="main-header">🎫 Mis Tickets</div>', unsafe_allow_html=True)
 
@@ -2060,10 +2063,13 @@ elif menu == "🎫 Mis Tickets":
         st.info("🎫 No tienes tickets asignados.")
     else:
         for t in mis_tickets:
-            if not t["atendido"]:
+            atendido = bool(t["atendido"])  # fuerza True/False
+            reporte_enviado = bool(t["reporte_enviado"])
+
+            if not atendido:
                 estado_tick = "🔴 No atendido"
                 color_tick  = CARRIER_DANGER
-            elif t["atendido"] and not t["reporte_enviado"]:
+            elif atendido and not reporte_enviado:
                 estado_tick = "🟠 Atendido (sin reporte)"
                 color_tick  = CARRIER_WARN
             else:
@@ -2092,7 +2098,9 @@ elif menu == "🎫 Mis Tickets":
                     unsafe_allow_html=True,
                 )
 
-                if t["atendido"] and not t["reporte_enviado"]:
+                # Mostrar aviso explícito del estado del reporte
+                if atendido and not reporte_enviado:
+                    st.warning("⚠️ El ticket está atendido pero **falta enviar el reporte**. Completa el campo de abajo y presiona **Enviar reporte**.")
                     with st.form(f"enviar_reporte_tecnico_{t['id']}"):
                         reporte_txt = st.text_area("Escribe el reporte de resolución", key=f"rep_{t['id']}")
                         if st.form_submit_button("📤 Enviar reporte", use_container_width=True, type="primary"):
@@ -2106,6 +2114,8 @@ elif menu == "🎫 Mis Tickets":
                                 st.success("✅ Reporte enviado. Ticket completado (verde).")
                                 _invalidate_cache()
                                 st.rerun()
+                elif atendido and reporte_enviado:
+                    st.success("📄 Reporte ya enviado. Este ticket está completamente cerrado.")
 
                 st.markdown("</div>", unsafe_allow_html=True)
 
